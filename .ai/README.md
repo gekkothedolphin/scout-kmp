@@ -15,6 +15,12 @@ of the Yandex Scout library (a manual dependency injection framework for JVM/And
 Apache 2.0 licensed) into a full Kotlin Multiplatform library. The fork is maintained by
 **gekkothedolphin** (see root `README.md` License section and `AUTHORS`).
 
+Read `design_philosophy.md` before changing any core API, key-encoding strategy, or
+`get`/`collect`/`associate` method family — it documents design decisions the original
+authors already tried, measured, and in some cases reverted (e.g. qualifiers, "smart
+get" via `typeOf<T>()`, string keys). Repeating a reverted experiment wastes effort and
+can reintroduce known production bugs.
+
 Responsibilities:
 - Never invent APIs, dependency versions, or file structure — always verify the actual
   repository state with tools (`grep`, `view`, `bash`) before making changes.
@@ -74,6 +80,11 @@ Facts about the current repository state as of writing this knowledge base:
 | **validator** | Module for validating the dependency graph (consistency/overrides/naming checks). JVM-only. |
 | **shared module** | Target KMP module (`commonMain`/`jvmMain`/...) that `scout/core` will be moved into. Created in Phase 2. |
 | **androidApp / iosApp / composeApp** | Platform consumer modules of the shared library. **Do not exist yet**, created in Phase 3. |
+| **Qualifiers (Koin/Dagger concept)** | Deliberately **not supported** in Scout. Instances of the same type are disambiguated via dedicated wrapper classes (e.g. `IoScheduler(val instance: Scheduler)`), not string/annotation qualifiers. Do not reintroduce qualifiers during the KMP port. |
+| **`element` / `mapping`** | Explicit multibinding factory kinds — `element<T>` contributes to a `List<T>` (read via `collect`), `mapping<K,V>` contributes to a `Map<K,V>` (read via `associate`). Intentionally explicit instead of Koin's implicit `getAll`. |
+| **`allowOverride`** | Required flag to intentionally redefine an existing factory; silent overrides are treated as bugs by design (this caused real production incidents at Yandex Market before the flag existed). |
+| **"Smart get" anti-pattern** | A historical, reverted design where a single `get<T>()` used `typeOf<T>()` to auto-detect `Lazy`/`Provider`/collection/nullable wrapping. Caused a severe startup performance regression at Yandex Market and was replaced by today's explicit `get`/`opt`/`getLazy`/`getProvider`/`collect`/`associate` method family. **Never reintroduce this pattern.** See `design_philosophy.md`. |
+| **`KClass` non-caching problem** | Kotlin does not cache `KClass` instances (`X::class === X::class` is `false`), and touching a `KClass`/`Class<*>` forces JVM class loading. This was the original motivation for `compiled-keys`. Porting `class-keys` to `commonMain` via `KClass<*>` reintroduces this exact cost on JVM — see `design_philosophy.md` before assuming performance parity. |
 
 ## 🗂️ `.ai/` structure
 
@@ -81,6 +92,7 @@ Facts about the current repository state as of writing this knowledge base:
 .ai/
 ├── README.md                          # this file — knowledge map
 ├── context_project.md                 # tech stack, architecture, code style
+├── design_philosophy.md               # origin story & design rationale (Habr article digest)
 └── migration_plan/
     ├── phase_1_analysis.md            # package/dependency/license analysis
     ├── phase_2_refactoring_shared.md  # move core into shared module (commonMain)

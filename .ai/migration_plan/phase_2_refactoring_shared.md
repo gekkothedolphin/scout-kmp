@@ -41,6 +41,12 @@ the new `jvm` target of `core` without any public API break.
       of `Class<*>`; every `T::class.java` call site in the moved code is replaced with
       `T::class`, and this is verified by grepping for `::class.java` inside
       `commonMain` (expected: zero matches).
+- [ ] Read `.ai/design_philosophy.md`'s "`KClass` → `Int` key evolution" section before
+      finalizing this item — porting to `KClass<*>` reintroduces the class-loading and
+      instance-caching costs the original `compiled-keys` variant was built to
+      eliminate. Document this trade-off explicitly in the module's public docs/KDoc
+      rather than presenting `commonMain` `class-keys` as a drop-in performance
+      equivalent.
 - [ ] `ThreadConfinementCheck` is implemented as an `expect class` in `commonMain` with
       a `jvmMain actual` (using the strategy recorded in Phase 1 — `kotlinx-atomicfu` or
       equivalent).
@@ -76,5 +82,11 @@ the new `jvm` target of `core` without any public API break.
   equivalent permissive license) and recording it in `context_project.md`.
 - Do **not** modify or delete existing Yandex copyright headers in files being moved —
   copy them as-is into the new source set location.
+- Do **not** reintroduce a generic "smart" `get<T>()` that inspects `typeOf<T>()` to
+  auto-detect `Lazy`/`Provider`/collection/nullable wrapping, even if it looks like a
+  nice ergonomic improvement for `commonMain`. This was tried by the original authors
+  and caused a severe, hard-to-diagnose startup performance regression — see
+  `.ai/design_philosophy.md`. Keep the explicit `get`/`opt`/`getLazy`/`getProvider`/
+  `collect`/`associate` method family as-is.
 - Do **not** proceed to Phase 3 while `inspector`/`validator` are broken or any test in
   `core` is failing.

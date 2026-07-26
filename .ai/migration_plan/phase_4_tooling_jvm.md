@@ -26,6 +26,9 @@ to force genuinely JVM-reflection-based code into `commonMain`.
 - `scout/scout/core/src/compiled-keys/kotlin/scout/**` — the `compiled-keys` source set
   left untouched since Phase 2; this phase decides its final fate.
 - `.ai/context_project.md` — "compiled-keys" glossary entry and JVM-dependency table.
+- `.ai/design_philosophy.md` — "`KClass` → `Int` key evolution" section explains
+  **why** `compiled-keys` exists (measured JVM class-loading/hashing/caching costs of
+  `KClass` at ~6000-node scale) — read this before deciding its fate below.
 
 ## 📋 Checklist (Definition of Done)
 
