@@ -33,20 +33,32 @@ Responsibilities:
 
 ## 📍 Current status
 
-**Phase: `phase_1_analysis.md` — Analysis (in progress, KMP infrastructure not yet created).**
+**Phase: `phase_1_analysis.md` — Analysis (in progress). Key decisions below are now
+CONFIRMED by the user — do not re-litigate them without explicit new instruction.**
 
-Facts about the current repository state as of writing this knowledge base:
-- Build system is pure **Groovy** Gradle (`build.gradle`, `settings.gradle`); there are
-  no `.kts` files in the project.
-- Kotlin `1.8.22`, JVM-only (`org.jetbrains.kotlin.jvm`), Java toolchain `8`.
-- The KMP plugin (`kotlin("multiplatform")`) is **not applied anywhere**.
-- `androidApp/`, `iosApp/`, `composeApp/` directories **do not exist yet** — they will
-  be created in Phase 3, based on the existing `scout/samples/coffee-maker`.
-- Maven group for all modules is `com.yandex.scout`, but Kotlin source packages are
-  `scout.*` (NOT `com.yandex.scout.*`). This distinction matters for Phase 1 — do not
-  conflate the Kotlin package namespace with Maven coordinates.
-- The base module to move into `commonMain` is **`scout/scout/core`** (see dependency
-  analysis in `context_project.md`).
+### ✅ Confirmed migration decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| **First-iteration target platforms** | **JVM/Android + iOS** (JS/Wasm explicitly deferred to a later, separate phase) | iOS has a usable `WeakReference` equivalent for `ReusableInstanceFactory`; JS/Wasm has none and would also force premature decisions on the validator's classpath-reflection model. Starting with 3 target families at once was rejected as too high blast-radius for an unstable core. |
+| **Package namespace** | Rename Kotlin package `scout.*` → **`dev.gekko.scout.*`** now, before Phase 2 starts | Kotlin package namespace and Maven group are independent axes; the fork needed its own namespace before commonMain work begins to avoid a second disruptive rename later. |
+| **Kotlin version** | Bump from `1.8.22` to the current stable Kotlin release before Phase 2 | 1.8.22 predates modern KMP tooling maturity (Xcode/Kotlin Native target support, commonizer improvements); upgrading first avoids doing the KMP conversion twice. |
+| **`compiled-keys` fate on JVM/Android** | **Still deferred to Phase 4** — decision remains data-driven from the benchmark comparison, NOT changed by the iOS decision below | Porting `class-keys` to `commonMain` already requires `KClass<*>` instead of `Class<*>`, which independently breaks the `scout-gradle-plugin`'s bcel bytecode pattern matching (hardcoded signature `"(Ljava/lang/Class;)I"`, see `design_philosophy.md`). Capture a **benchmark baseline on the current, unmodified JVM-only code** (see below) before any core changes, then re-run the same benchmarks after Phase 2 to measure the actual regression and decide with real data. |
+| **Key strategy on iOS** | **`KClass<*>`-based `class-keys` only — no numeric-key equivalent on iOS at all** | `compiled-keys` is JVM bytecode/classfile specific (bcel operates on `.class` files); Kotlin/Native has no equivalent bytecode format, so a numeric-key variant is not portable there in any case. Note for documentation accuracy: the original JVM `compiled-keys` motivation (non-cached `KClass` instances + forced JVM class loading, see `design_philosophy.md`) is a **JVM ClassLoader-specific problem that does not exist on Kotlin/Native at all** — this is not "LLVM/static linking negating the JVM problem", it's that the problem's precondition (a JVM classloader) is absent on Native. This decision is scoped to iOS only and does not change the JVM/Android `compiled-keys` deferral above. |
+| **Graph validation strategy (replaces JVM-only ClassGraph/reflection for non-JVM targets)** | Build a **new KSP-based component collector**, generating direct (non-reflective) Kotlin invocation code, wired **only into test compilations** (`kspJvmTest`, `kspIosX64Test`, `kspIosArm64Test`, `kspIosSimulatorArm64Test` — see correction below), never into `commonMain`/production compilations | `ClassGraph` (classpath scanning) and `java.lang.reflect.Method` (used by `scout/validator`'s `MethodInvoker`) have no Kotlin/Native equivalent — they cannot run on iOS at all. KSP is the standard multiplatform-safe compile-time introspection mechanism. Keeping codegen scoped to test-only compilations matches Scout's founding principle (see `design_philosophy.md`: "validation happens in unit tests, not via annotation-processing in main code" — this is literally why Scout was created instead of using Dagger+Kapt). **Existing JVM `scout/validator` + `tools/classgraph-collector` are NOT being replaced** — they stay untouched as the proven JVM/Android validation path; the KSP-based collector is a new, additional module built specifically to unblock iOS/Native validation. |
+| **Gradle KSP wiring correction** | There is **no single `kspCommonTest` configuration** in KSP's multiplatform support | KSP configures one Gradle configuration **per target's test compilation**: `kspJvmTest`, `kspIosX64Test`, `kspIosArm64Test`, `kspIosSimulatorArm64Test`, etc. (verified against official KSP multiplatform docs). The processor will run once per target — plan for this when estimating CI time, and never write `kspCommonTest` literally in build scripts, it does not exist. |
+| **KSP processor implementation approach** | Build a narrow, purpose-specific KSP processor using **KotlinPoet** for code generation; do **not** take a runtime dependency on `kotlin-inject`/Metro | No existing library does "collect `Component` subclasses + generate direct invocation calls for validation" out of the box — this is bespoke to Scout's validation algorithm. `kotlin-inject` (github `evant/kotlin-inject`) and `Metro` (github `zacsweers/metro`) are proven, Apache-2.0-licensed, KSP-based multiplatform DI processors — use their **architecture as a reference** (multiplatform per-target KSP wiring, contribution/collection merging patterns) without depending on them at runtime, to avoid coupling Scout to a second DI framework. |
+
+### 🔴 Action required before Phase 2 starts: capture benchmark baseline
+
+`scout/measures/jvm-benchmarks` already contains a JMH-based benchmark suite
+(`benchmarks/assessment/*`, `benchmarks/comparison/*` — cold/warm get, graph init at
+5/25/125 nodes, constant get, builder mode, parent access, associate/collect calls).
+**Before touching `scout/core` in Phase 2**, run this suite against the current,
+unmodified codebase and archive the results (e.g. under `.ai/benchmarks/baseline/`) as
+the reference point ("эталон") for every later performance comparison — especially the
+`KClass` vs `compiled-keys` `Int` key trade-off decision in Phase 4. Do not skip this
+step; without it Phase 4's data-driven decision has nothing to compare against.
 
 ## 📜 Interaction rules
 
@@ -84,7 +96,8 @@ Facts about the current repository state as of writing this knowledge base:
 | **`element` / `mapping`** | Explicit multibinding factory kinds — `element<T>` contributes to a `List<T>` (read via `collect`), `mapping<K,V>` contributes to a `Map<K,V>` (read via `associate`). Intentionally explicit instead of Koin's implicit `getAll`. |
 | **`allowOverride`** | Required flag to intentionally redefine an existing factory; silent overrides are treated as bugs by design (this caused real production incidents at Yandex Market before the flag existed). |
 | **"Smart get" anti-pattern** | A historical, reverted design where a single `get<T>()` used `typeOf<T>()` to auto-detect `Lazy`/`Provider`/collection/nullable wrapping. Caused a severe startup performance regression at Yandex Market and was replaced by today's explicit `get`/`opt`/`getLazy`/`getProvider`/`collect`/`associate` method family. **Never reintroduce this pattern.** See `design_philosophy.md`. |
-| **`KClass` non-caching problem** | Kotlin does not cache `KClass` instances (`X::class === X::class` is `false`), and touching a `KClass`/`Class<*>` forces JVM class loading. This was the original motivation for `compiled-keys`. Porting `class-keys` to `commonMain` via `KClass<*>` reintroduces this exact cost on JVM — see `design_philosophy.md` before assuming performance parity. |
+| **`KClass` non-caching problem** | Kotlin does not cache `KClass` instances (`X::class === X::class` is `false`), and touching a `KClass`/`Class<*>` forces JVM class loading. This was the original motivation for `compiled-keys`. Porting `class-keys` to `commonMain` via `KClass<*>` reintroduces this exact cost on JVM — see `design_philosophy.md` before assuming performance parity. **This problem is JVM-ClassLoader-specific and does not exist on Kotlin/Native at all** — the iOS target uses `KClass<*>`-based `class-keys` unconditionally, this is not a trade-off on iOS, just the only option. |
+| **KSP-based validator (planned)** | A new, additional Kotlin Symbol Processing–based component collector, wired **only into test compilations** (`kspJvmTest`, `kspIosX64Test`, etc. — there is no single `kspCommonTest` configuration, KSP is per-target), generating direct non-reflective invocation code instead of using `ClassGraph`+`java.lang.reflect`. Built to unblock graph validation on iOS/Native, where classpath scanning and reflection don't exist. **Does not replace** the existing JVM `scout/validator`/`tools/classgraph-collector`, which remain the proven JVM/Android validation path. |
 
 ## 🗂️ `.ai/` structure
 

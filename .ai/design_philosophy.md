@@ -45,9 +45,7 @@
 | **Validation via reflection over `Component` subclasses**, not compile-time | No annotation processing = no compile-time graph proof. Validator instead: (1) finds all `Component` subclasses via **ClassGraph** (classpath scanning, tuned with package/jar filters for speed), (2) reflectively instantiates them, (3) calls every method and forces evaluation of any `Lazy`/`Provider` results. | This is exactly what `scout/validator` + `tools/classgraph-collector` implement — confirms these modules are inherently JVM/classpath-reflection-based and **cannot be ported to commonMain** (see `phase_4_tooling_jvm.md`). |
 | **`FactoryEnhancer`-style composition instead of runtime flags/branches** | To avoid paying "if enabled" branch costs on every dependency resolution at Yandex Market's scale (~6000 nodes), optional behavior (e.g. logging) is added via composition/wrapping at factory-creation time, not conditional checks in the hot path. | Relevant if optimizing `InstanceFactory`/`Interceptor` chains during the KMP port — prefer composition-based opt-in features over hot-path branching. |
 
-## The `KClass` → `Int` key evolution — critical context for the KMP port
-
-This is the single most important historical fact for `phase_2_refactoring_shared.md`
+## The `KClass` → `Int` key evolution — critical context for the KMP portThis is the single most important historical fact for `phase_2_refactoring_shared.md`
 and `phase_4_tooling_jvm.md`:
 
 1. Scout's **first** key implementation used **`Class<*>`/`KClass<*>`** as the
@@ -78,7 +76,40 @@ reverting to the *pre-optimization* Scout behavior unless/until Phase 4 decides 
 target. **Do not silently claim performance parity with the original `compiled-keys`
 variant** — call this trade-off out explicitly in any user-facing documentation.
 
-## Benchmarks context (for expectation-setting, not literal numbers)
+## KMP validation strategy — why the KSP-based approach fits, not fights, the original philosophy
+
+The migration replaces ClassGraph classpath scanning + `java.lang.reflect.Method`
+invocation (JVM-only, cannot run on Kotlin/Native) with a **new KSP-based component
+collector**, wired only into test compilations. This is worth calling out explicitly:
+it is **not a compromise forced by KMP**, it is arguably a *more faithful*
+implementation of Scout's founding principle than the current JVM tooling.
+
+Recall from the "Algorithm validation" section above: the original authors explicitly
+rejected **any** annotation-processing/codegen in production code specifically to avoid
+repeating Dagger+Kapt's build-time cost, and instead pushed all graph verification into
+**unit tests**. The JVM implementation happens to use runtime reflection to achieve
+this (because that was the pragmatic JVM-native tool available), but the actual
+invariant the authors cared about was **"no codegen in `main`, verification lives in
+`test`"** — not "verification must use reflection". A KSP processor wired exclusively
+into `kspJvmTest`/`kspIosX64Test`/etc. (never into `kspJvm`/`kspIosX64` main
+configurations) satisfies the exact same invariant, just with compile-time-generated
+direct calls instead of runtime-reflected ones — which is actually a *strictly better*
+mechanism on platforms where reflection doesn't fully exist (Kotlin/Native) or is
+discouraged for performance (this port already avoids `typeOf<T>()`-style reflection
+for the reasons above).
+
+**Guardrails to preserve this invariant during implementation:**
+- The KSP-generated invocation code must be tied to test source sets (`iosTest`,
+  `jvmTest`, `commonTest`-consuming test compilations) only, never to
+  `main`/`commonMain` compilations — verify Gradle configuration names literally start
+  with `ksp` and end with `Test` (e.g. `kspJvmTest`) for every wiring added.
+- Do not let "it would be more convenient to also generate this in main" creep in
+  later — that is precisely the kapt-style regression the original team escaped from.
+- KSP tooling itself (KotlinPoet, the processor module) is a **build-time-only**
+  dependency, never shipped in the published `core` artifact — same packaging
+  discipline as the existing `scout-gradle-plugin`, which is also never a runtime
+  dependency of consumers.
+
 
 - The original team benchmarked Scout against Koin, Kodein, Katana, and Dagger,
   acknowledging benchmarks measure isolated code paths, not real-world conditions, and

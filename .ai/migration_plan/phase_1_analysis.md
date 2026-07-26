@@ -30,15 +30,22 @@ recorded in this file's checklist and, if needed, follow-up notes appended to
 
 - [ ] Every `.kt` file under `scout/scout/core/src/main` is grepped for JVM-only
       imports (`java.*`, `javax.*`) and the results are tabulated (file → API → KMP
-      replacement strategy) in `context_project.md`.
+      replacement strategy) in `context_project.md`. **Status: done** — see the table in
+      `context_project.md`.
 - [ ] Confirm whether `class-keys` or `compiled-keys` is the default build variant
       (check `withCompiledKeys` in `features.gradle`) and document the implication for
-      KMP (only `class-keys` is portable).
+      KMP (only `class-keys` is portable). **Status: done** — default is `class-keys`
+      (`withCompiledKeys` is `false` unless `-Dscout.compile.keys=true` is passed);
+      `compiled-keys`/`scout-gradle-plugin` fate is **deferred to Phase 4** (data-driven
+      decision, see `.ai/README.md` "Confirmed migration decisions").
 - [ ] Confirm the Maven group (`com.yandex.scout`) vs Kotlin package namespace
       (`scout.*`) are documented as two independent axes — decide (with the user) in
       this phase whether package renaming to a new namespace (e.g. `dev.gekko.scout` or
       similar) is required for the fork, or whether the existing `scout.*` package is
-      kept.
+      kept. **Status: done** — rename `scout.*` → `dev.gekko.scout.*` confirmed, to be
+      executed at the start of Phase 2 (before commonMain work, to avoid a second
+      disruptive rename later). Maven group decision (whether to also change from
+      `com.yandex.scout`) is still open — resolve before Phase 5 publishing work.
 - [ ] Verify license compatibility: original license is Apache 2.0 (`LICENSE` file),
       confirm the fork's added copyright line format matches what is already present in
       root `README.md` (`Copyright 2026 gekkothedolphin@gmail.com`) and propagate the
@@ -47,13 +54,31 @@ recorded in this file's checklist and, if needed, follow-up notes appended to
 - [ ] List every JVM-only downstream module (`inspector`, `validator`,
       `classgraph-collector`, `scout-gradle-plugin`, `measures/*`) with an explicit
       decision recorded: "stays JVM-only" or "needs multiplatform equivalent" — no
-      module should be left undecided.
+      module should be left undecided. **Status: done** — `inspector` and
+      `validator` are confirmed JVM-only (classpath-reflection based, see
+      `design_philosophy.md` on the validator algorithm using ClassGraph + reflective
+      `Component` instantiation, which is not portable to Native/JS) and **stay
+      untouched** as the proven JVM/Android validation path. iOS/Native validation is
+      solved by a **new, separate KSP-based collector** (see `.ai/README.md` "Confirmed
+      migration decisions" and `phase_3_platforms.md`/`phase_4_tooling_jvm.md`), not by
+      porting ClassGraph/reflection.
 - [ ] Identify the minimum Kotlin version required by the KMP Gradle plugin compatible
       with the current toolchain, and record whether a Kotlin version bump (from
-      `1.8.22`) is required before Phase 2 can start.
-- [ ] Get explicit user confirmation on open questions before Phase 2 starts: (a)
-      package renaming decision, (b) Kotlin version bump decision, (c) which additional
-      targets beyond `jvm` are in scope (native/iOS, JS/Wasm) for the first iteration.
+      `1.8.22`) is required before Phase 2 can start. **Status: done** — bump to
+      current stable Kotlin confirmed; pick the exact target version at the start of
+      Phase 2 (verify latest stable at that time rather than hardcoding a version here
+      that may already be outdated).
+- [ ] **New action item:** capture a benchmark baseline using the existing
+      `measures/jvm-benchmarks` suite against the current, unmodified JVM-only
+      codebase, and archive results (e.g. `.ai/benchmarks/baseline/`) before any Phase 2
+      changes to `core`. This is required to make Phase 4's `compiled-keys` decision
+      data-driven instead of speculative.
+- [ ] Get explicit user confirmation on open questions before Phase 2 starts: ~~(a)
+      package renaming decision~~ done, ~~(b) Kotlin version bump decision~~ done, ~~(c)
+      which additional targets beyond `jvm` are in scope~~ done (iOS confirmed, JS/Wasm
+      deferred), ~~(d) iOS graph-validation strategy~~ done (new KSP-based collector,
+      test-only, existing JVM validator untouched). Remaining open item: Maven group
+      rename (see above).
 
 ## ⚠️ Anti-patterns (forbidden on this phase)
 

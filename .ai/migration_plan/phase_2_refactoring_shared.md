@@ -4,10 +4,15 @@
 
 Turn `scout/scout/core` into a genuine Kotlin Multiplatform module with a
 `commonMain` source set containing all platform-agnostic DI logic, backed by
-`jvmMain` (and, if approved in Phase 1, additional `nativeMain`/`jsMain`) actuals for
-the handful of JVM-specific APIs identified during analysis. All downstream JVM-only
-modules (`inspector`, `validator`, `classgraph-collector`) must keep compiling against
-the new `jvm` target of `core` without any public API break.
+`jvmMain` and `iosMain`/`iosArm64Main`/`iosSimulatorArm64Main`/`iosX64Main` actuals
+(confirmed target set: **JVM/Android + iOS** for this iteration; JS/Wasm explicitly
+out of scope) for the handful of platform-specific APIs identified during analysis.
+This phase also executes the confirmed package rename (`scout.*` →
+`dev.gekko.scout.*`) and the Kotlin version bump, since both must happen before or
+alongside the multiplatform conversion to avoid a second disruptive rename later. All
+downstream JVM-only modules (`inspector`, `validator`, `classgraph-collector`) must
+keep compiling against the new `jvm` target of `core` without any public API break
+beyond the confirmed package/key-type changes.
 
 ## 📍 Starting state (read before starting)
 
@@ -30,8 +35,25 @@ the new `jvm` target of `core` without any public API break.
 
 ## 📋 Checklist (Definition of Done)
 
+- [ ] Kotlin version is bumped from `1.8.22` to the current stable release (verify the
+      actual latest stable version at execution time — do not hardcode a version from
+      this planning document, which may already be outdated) across `versions.gradle`
+      and all module `build.gradle` files, and the project still builds on the `jvm`
+      target before any multiplatform conversion work starts (isolate the version bump
+      as its own verifiable commit/step).
+- [ ] Kotlin package namespace is renamed from `scout.*` to **`dev.gekko.scout.*`**
+      across all files in `scout/scout/core` (and transitively in `inspector`,
+      `validator`, `classgraph-collector`, `scout-gradle-plugin` once they're updated to
+      depend on the renamed `core`) — verify via grep that zero references to the bare
+      `package scout` / `import scout.` remain unrenamed. Update `AUTHORS`/license
+      header package references if any exist. This must be a dedicated, isolated
+      rename step (ideally its own commit) completed and verified building *before*
+      starting the `commonMain` extraction below, to keep the two changes independently
+      revertible/reviewable.
 - [ ] `scout/scout/core/build.gradle` applies `org.jetbrains.kotlin.multiplatform`
-      instead of `org.jetbrains.kotlin.jvm`, with a `jvm()` target declared at minimum.
+      instead of `org.jetbrains.kotlin.jvm`, with `jvm()` and the iOS target set
+      (`iosArm64()`, `iosSimulatorArm64()`, `iosX64()` or the current recommended
+      Kotlin/Native default target list) declared.
 - [ ] `commonMain` contains: `Component`, `Scope`, `Injector`, `Provider`,
       `Definition`/`Registry`, `InstanceFactory` and its `Single`/`Factory` strategies,
       `Accessor`/`Interceptor` family, all `ScopeBuilder` variants, and all
@@ -49,17 +71,24 @@ the new `jvm` target of `core` without any public API break.
       equivalent.
 - [ ] `ThreadConfinementCheck` is implemented as an `expect class` in `commonMain` with
       a `jvmMain actual` (using the strategy recorded in Phase 1 — `kotlinx-atomicfu` or
-      equivalent).
+      equivalent) and an `iosMain actual` (Kotlin/Native has no `java.util.concurrent`,
+      confirm the atomicfu or `kotlin.native.concurrent` equivalent works correctly
+      under the new Kotlin/Native memory model).
 - [ ] `ReusableInstanceFactory`'s `SoftReference` usage is abstracted behind an
       `expect`/`actual` type, with the `jvmMain actual` preserving current soft-reference
-      semantics exactly (no behavior change for existing JVM consumers).
+      semantics exactly (no behavior change for existing JVM consumers), and the
+      `iosMain actual` implemented using `kotlin.native.ref.WeakReference` (note: this is
+      a *weak*, not *soft*, reference — Kotlin/Native has no soft-reference equivalent;
+      document this semantic difference explicitly rather than presenting it as
+      equivalent behavior).
 - [ ] `ParentLookupUtils` no longer uses `java.util.Collections.unmodifiableList`;
       replaced with a common Kotlin API with identical immutability guarantees.
 - [ ] All package/namespace renames decided in Phase 1 (if any) are applied
       consistently across `commonMain` and `jvmMain`, with no leftover references to the
       old namespace.
-- [ ] Tests are migrated to `commonTest` (or `jvmTest` where genuinely
-      platform-specific) using `kotlin.test`, and pass on the `jvm` target.
+- [ ] Tests are migrated to `commonTest` (or `jvmTest`/`iosTest` where genuinely
+      platform-specific) using `kotlin.test`, and pass on both the `jvm` and iOS
+      (simulator) targets.
 - [ ] `scout/scout/inspector` and `scout/scout/validator` build.gradle dependency
       declarations are updated to consume the multiplatform `core`'s `jvm` artifact, and
       both modules compile and their existing test suites pass unmodified (no source
