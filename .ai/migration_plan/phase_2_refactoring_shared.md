@@ -59,16 +59,32 @@ beyond the confirmed package/key-type changes.
       `Accessor`/`Interceptor` family, all `ScopeBuilder` variants, and all
       `error`/`exception` types — verified by `grep` that none of these files import
       `java.*`/`javax.*` after the move.
-- [ ] `ObjectKey`/`CollectionKey`/`AssociationKey` typealiases use `KClass<*>` instead
-      of `Class<*>`; every `T::class.java` call site in the moved code is replaced with
-      `T::class`, and this is verified by grepping for `::class.java` inside
-      `commonMain` (expected: zero matches).
-- [ ] Read `.ai/design_philosophy.md`'s "`KClass` → `Int` key evolution" section before
-      finalizing this item — porting to `KClass<*>` reintroduces the class-loading and
-      instance-caching costs the original `compiled-keys` variant was built to
-      eliminate. Document this trade-off explicitly in the module's public docs/KDoc
-      rather than presenting `commonMain` `class-keys` as a drop-in performance
-      equivalent.
+- [ ] **Key abstraction seam** (`expect`/`actual`): introduce `expect class DiKey` in
+      `commonMain`, replacing today's `Class<*>`-based `ObjectKey`/`CollectionKey`/
+      `AssociationKey` typealiases, plus a single creation portal
+      `expect fun <T : Any> diKeyOf(kClass: KClass<T>): DiKey`. **All** key creation in
+      `Registry`/`InstanceFactory`/`Component` internals must route through `diKeyOf` —
+      grep to confirm zero direct `KClass`/`Class` literals used as keys anywhere else
+      in `commonMain`. This is what lets Phase 4 swap the JVM/Android implementation
+      later without touching any call site.
+- [ ] Both `jvmMain` and `iosMain` initially implement the seam identically:
+      `actual typealias DiKey = KClass<*>` with a trivial `actual fun <T : Any>
+      diKeyOf(kClass: KClass<T>): DiKey = kClass` on **both** platforms. Do **not**
+      implement an `Int`-backed JVM actual in this phase — see anti-patterns below, that
+      is explicitly Phase 4's decision, made from benchmark data, not built speculatively
+      here.
+- [ ] Every `T::class.java` call site in the moved code is replaced with `T::class`,
+      verified by grepping for `::class.java` inside `commonMain` (expected: zero
+      matches).
+- [ ] Read `.ai/design_philosophy.md`'s "`KClass` → `Int` key evolution" section and the
+      2026-07-26 empirical benchmark section before finalizing this item. The measured
+      data shows: on JVM, `KClass`-keyed `HashMap` lookups are ~9.2x slower than
+      `Int`-keyed (confirms the seam is worth keeping ready for a future swap); on iOS,
+      the overhead is only ~1.11x (confirms plain `KClass` is fine there permanently, and
+      for a different reason than "LLVM AOT" — `KClass` identity is actually stable on
+      Kotlin/Native, unlike on JVM). Document this trade-off explicitly in the module's
+      public docs/KDoc rather than presenting `commonMain` `class-keys` as a drop-in
+      performance equivalent on JVM.
 - [ ] `ThreadConfinementCheck` is implemented as an `expect class` in `commonMain` with
       a `jvmMain actual` (using the strategy recorded in Phase 1 — `kotlinx-atomicfu` or
       equivalent) and an `iosMain actual` (Kotlin/Native has no `java.util.concurrent`,
@@ -111,6 +127,10 @@ beyond the confirmed package/key-type changes.
   equivalent permissive license) and recording it in `context_project.md`.
 - Do **not** modify or delete existing Yandex copyright headers in files being moved —
   copy them as-is into the new source set location.
+- Do **not** implement an `Int`-backed `DiKey` actual for JVM/Android in this phase,
+  even as a "just in case" optimization — that swap is Phase 4's decision, made from
+  measured benchmark data (see `phase4-compiled-keys-decision`), not something to
+  pre-empt speculatively while building the seam.
 - Do **not** reintroduce a generic "smart" `get<T>()` that inspects `typeOf<T>()` to
   auto-detect `Lazy`/`Provider`/collection/nullable wrapping, even if it looks like a
   nice ergonomic improvement for `commonMain`. This was tried by the original authors

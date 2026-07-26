@@ -70,13 +70,17 @@ This phase has two distinct halves — do not conflate them:
       the multiplatform `core`, and both modules' existing test suites pass unmodified.
 - [ ] `tools/classgraph-collector` compiles against the new `core` `jvm` artifact with
       no source changes beyond dependency coordinates.
-- [ ] Explicit decision recorded (with user sign-off) on the fate of `compiled-keys`:
-      either (a) kept as a JVM-only opt-in feature layered on top of the multiplatform
-      `core`'s `jvm` target only, with clear documentation that it is unavailable on
-      other targets, or (b) deprecated/removed in favor of `class-keys` for the
-      multiplatform-first fork. **This decision must be based on the benchmark
-      comparison below, not made speculatively, and is scoped to JVM/Android only — it
-      is unaffected by the iOS `class-keys`-only decision already made in Phase 1/2.**
+- [ ] Explicit decision recorded (with user sign-off) on whether to **swap the JVM/
+      Android `DiKey`/`diKeyOf` actual** (the `expect`/`actual` seam already built in
+      Phase 2, currently `KClass`-backed on both platforms) **to an `Int`-backed
+      implementation** using `compiled-keys`: either (a) swap it, keeping
+      `compiled-keys` as a JVM-only opt-in layered behind the existing seam — the iOS
+      actual and all `commonMain` call sites remain untouched since they only ever call
+      `diKeyOf`, or (b) leave JVM/Android on the same plain-`KClass` actual as iOS
+      permanently and deprecate/remove `compiled-keys` + `scout-gradle-plugin`. **This
+      decision must be based on the benchmark comparison below, not made speculatively,
+      and only decides which actual implementation JVM/Android uses — the abstraction
+      itself is already built and is not being changed.**
 - [ ] **Benchmark comparison against the Phase-1 baseline is completed first**: re-run
       the same `measures/jvm-benchmarks` suite (cold/warm get, graph init at 5/25/125
       nodes, constant get, etc.) against the new multiplatform `core`'s `jvm` target,
@@ -88,10 +92,10 @@ This phase has two distinct halves — do not conflate them:
       verified to still correctly target the `jvm`-compiled classfiles produced by the
       new multiplatform build (Kotlin/JVM classfile output format must not have changed
       in a way that breaks bcel parsing), **and** its hardcoded method signature
-      matching (`"(Ljava/lang/Class;)I"`) is updated to match the new `KClass<*>`-based
-      `create` method signatures in `commonMain`/`jvmMain` — this rewrite is required
-      regardless of the compiled-keys fate decision, because the signature change alone
-      already breaks the plugin's pattern matching.
+      matching (`"(Ljava/lang/Class;)I"`) is updated to match the new `diKeyOf(KClass<T>):
+      DiKey` portal introduced in Phase 2 — this rewrite is required regardless of the
+      compiled-keys fate decision, because the signature change alone already breaks the
+      plugin's pattern matching.
 - [ ] If option (b) is chosen: `compiled-keys` source set, its build.gradle
       `withCompiledKeys` conditional, and the `scout-gradle-plugin` module are removed or
       clearly marked deprecated, with `release-compiled.sh` and `release-plugin.sh`

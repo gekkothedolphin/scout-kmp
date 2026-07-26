@@ -76,6 +76,35 @@ reverting to the *pre-optimization* Scout behavior unless/until Phase 4 decides 
 target. **Do not silently claim performance parity with the original `compiled-keys`
 variant** — call this trade-off out explicitly in any user-facing documentation.
 
+## Empirical validation of the `KClass` iOS decision (2026-07-26 experiment)
+
+A standalone micro-benchmark was built and run to stop relying on assumptions
+about `KClass` performance on Kotlin/Native — see
+`.ai/experiments/kclass-benchmark/RESULTS.md` for full method and numbers.
+Headline findings:
+
+- On **JVM**, `KClass` identity (`===`) is confirmed **not stable** across
+  calls, and `HashMap<KClass,V>` lookup is measurably **~9x slower** than an
+  equivalent `Int`-keyed map — empirically justifies keeping `compiled-keys`
+  as a real optimization on JVM/Android (still a Phase 4, benchmark-driven
+  decision on whether to *keep porting* it, not whether the problem is real).
+- On **iOS Simulator arm64 (release binary)**, `KClass` identity **is
+  stable**, and `KClass`-keyed lookup overhead vs `Int`-keyed is only
+  **~1.11x** — i.e. negligible. This confirms the decision to use plain
+  `KClass`-based keys on iOS without a numeric-key equivalent is sound, but
+  for a different reason than originally argued: it is **not** because
+  "LLVM AOT defeats ClassLoader problems" (Kotlin/Native has no ClassLoader
+  at all), it's because Kotlin/Native apparently caches/interns `KClass`
+  metadata references, so the JVM-specific instability this optimization was
+  built to work around simply doesn't reproduce there.
+- **Always benchmark Kotlin/Native with `release` binaries** — debug
+  binaries in this experiment were 3-10x slower across the board, which would
+  have given misleading conclusions if used as the basis for a decision.
+
+This is directional/micro-benchmark evidence only — it does not replace the
+full Phase 1/Phase 4 benchmark baseline using the real `measures/jvm-benchmarks`
+suite, which exercises actual graph-resolution workloads, not raw map lookups.
+
 ## KMP validation strategy — why the KSP-based approach fits, not fights, the original philosophy
 
 The migration replaces ClassGraph classpath scanning + `java.lang.reflect.Method`
