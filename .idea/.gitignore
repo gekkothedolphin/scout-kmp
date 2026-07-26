@@ -1,0 +1,6 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+.idea/
+## add if you want to save launch configurations for AI agents
+#!.idea/runConfigurations/
