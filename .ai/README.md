@@ -33,8 +33,10 @@ Responsibilities:
 
 ## 📍 Current status
 
-**Phase: `phase_1_analysis.md` — Analysis (in progress). Key decisions below are now
-CONFIRMED by the user — do not re-litigate them without explicit new instruction.**
+**Phase: `phase_1_analysis.md` — Analysis is now COMPLETE (all checklist items resolved,
+including the benchmark baseline). Phase 2 (`phase_2_refactoring_shared.md`) is next.
+Key decisions below are CONFIRMED by the user — do not re-litigate them without
+explicit new instruction.**
 
 ### ✅ Confirmed migration decisions
 
@@ -43,6 +45,7 @@ CONFIRMED by the user — do not re-litigate them without explicit new instructi
 | **First-iteration target platforms** | **JVM/Android + iOS** (JS/Wasm explicitly deferred to a later, separate phase) | iOS has a usable `WeakReference` equivalent for `ReusableInstanceFactory`; JS/Wasm has none and would also force premature decisions on the validator's classpath-reflection model. Starting with 3 target families at once was rejected as too high blast-radius for an unstable core. |
 | **Physical code location** | All new KMP code lives in a **new, separate top-level `scout-kmp/` directory** — a standalone Gradle multiplatform project (own `settings.gradle.kts`, own Gradle wrapper), not a Kotlin package inside `scout/`. The original `scout/` directory is **never modified** for the rest of this migration — it is kept byte-for-byte as the JVM-only reference baseline. New modules (`core`, later `inspector`/`validator`/`androidApp`/`iosApp`/the KSP collector) are added to `scout-kmp/` incrementally, one per phase, by **copying and adapting** code from the corresponding `scout/` module — never by `git mv`/in-place edits. | Keeps `scout/` as a trustworthy, untouched baseline for benchmark comparisons (Phase 1 baseline vs Phase 4 comparison) and licensing/attribution clarity, makes rollback trivial (delete `scout-kmp/`), and allows incremental, side-by-side development without ever leaving the original library in a broken intermediate state. Confirmed 2026-08-02; supersedes any earlier phase wording that talked about "moving"/"renaming in place" `scout/scout/core` — that language now means "copy into `scout-kmp/core`, adapt, leave the `scout/` original untouched". |
 | **Package namespace** | Rename Kotlin package `scout.*` → **`dev.gekko.scout.*`** now, before Phase 2 starts | Kotlin package namespace and Maven group are independent axes; the fork needed its own namespace before commonMain work begins to avoid a second disruptive rename later. |
+| **Maven group for `scout-kmp/`** | **`dev.gekko.scout`** — matches the Kotlin package namespace exactly (confirmed 2026-08-02) | Avoids the original fork ambiguity of two independent axes (Maven group vs Kotlin package) ever diverging again; also avoids any appearance of publishing under Yandex's original `com.yandex.scout` coordinates without their involvement. The original `scout/` project's Maven group (`com.yandex.scout`, in `scout/build.gradle`) is never changed — it is frozen along with the rest of `scout/`. |
 | **Kotlin version** | Bump from `1.8.22` to the current stable Kotlin release before Phase 2 | 1.8.22 predates modern KMP tooling maturity (Xcode/Kotlin Native target support, commonizer improvements); upgrading first avoids doing the KMP conversion twice. |
 | **`compiled-keys` fate on JVM/Android** | **Still deferred to Phase 4** — decision remains data-driven from the benchmark comparison, NOT changed by the iOS decision below. **Architecture pre-work now done in Phase 2**: the `DiKey`/`diKeyOf` `expect`/`actual` seam is built ahead of time so JVM/Android can later swap to an `Int`-backed actual without touching any `commonMain` call site; Phase 4 only decides *which* actual JVM/Android uses, not whether the abstraction exists | Porting `class-keys` to `commonMain` already requires `KClass<*>` instead of `Class<*>`, which independently breaks the `scout-gradle-plugin`'s bcel bytecode pattern matching (hardcoded signature `"(Ljava/lang/Class;)I"`, see `design_philosophy.md`). Capture a **benchmark baseline on the current, unmodified JVM-only code** (see below) before any core changes, then re-run the same benchmarks after Phase 2 to measure the actual regression and decide with real data. A 2026-07-26 standalone micro-benchmark (`.ai/experiments/kclass-benchmark/`) already shows ~9.2x `KClass`-vs-`Int` `HashMap` lookup overhead on JVM — real, but the full-graph benchmark comparison is still the basis for the final decision. |
 | **Key strategy on iOS** | **`KClass<*>`-based `class-keys` only — no numeric-key equivalent on iOS at all** — now empirically confirmed, not just architecturally justified | `compiled-keys` is JVM bytecode/classfile specific (bcel operates on `.class` files); Kotlin/Native has no equivalent bytecode format, so a numeric-key variant is not portable there in any case. Note for documentation accuracy: the original JVM `compiled-keys` motivation (non-cached `KClass` instances + forced JVM class loading, see `design_philosophy.md`) is a **JVM ClassLoader-specific problem that does not exist on Kotlin/Native at all** — this is not "LLVM/static linking negating the JVM problem", it's that the problem's precondition (a JVM classloader) is absent on Native. A 2026-07-26 micro-benchmark (`.ai/experiments/kclass-benchmark/RESULTS.md`) confirms this empirically: `KClass` identity (`===`) is stable on iOS Simulator (unlike JVM, where it's unstable), and `KClass`-keyed lookup overhead vs `Int`-keyed is only ~1.11x in a release build — negligible. This decision is scoped to iOS only and does not change the JVM/Android `compiled-keys` deferral above. |
@@ -50,16 +53,14 @@ CONFIRMED by the user — do not re-litigate them without explicit new instructi
 | **Gradle KSP wiring correction** | There is **no single `kspCommonTest` configuration** in KSP's multiplatform support | KSP configures one Gradle configuration **per target's test compilation**: `kspJvmTest`, `kspIosX64Test`, `kspIosArm64Test`, `kspIosSimulatorArm64Test`, etc. (verified against official KSP multiplatform docs). The processor will run once per target — plan for this when estimating CI time, and never write `kspCommonTest` literally in build scripts, it does not exist. |
 | **KSP processor implementation approach** | Build a narrow, purpose-specific KSP processor using **KotlinPoet** for code generation; do **not** take a runtime dependency on `kotlin-inject`/Metro | No existing library does "collect `Component` subclasses + generate direct invocation calls for validation" out of the box — this is bespoke to Scout's validation algorithm. `kotlin-inject` (github `evant/kotlin-inject`) and `Metro` (github `zacsweers/metro`) are proven, Apache-2.0-licensed, KSP-based multiplatform DI processors — use their **architecture as a reference** (multiplatform per-target KSP wiring, contribution/collection merging patterns) without depending on them at runtime, to avoid coupling Scout to a second DI framework. |
 
-### 🔴 Action required before Phase 2 starts: capture benchmark baseline
+### ✅ Phase 1 complete — benchmark baseline captured (2026-08-02)
 
-`scout/measures/jvm-benchmarks` already contains a JMH-based benchmark suite
-(`benchmarks/assessment/*`, `benchmarks/comparison/*` — cold/warm get, graph init at
-5/25/125 nodes, constant get, builder mode, parent access, associate/collect calls).
-**Before touching `scout/core` in Phase 2**, run this suite against the current,
-unmodified codebase and archive the results (e.g. under `.ai/benchmarks/baseline/`) as
-the reference point ("эталон") for every later performance comparison — especially the
-`KClass` vs `compiled-keys` `Int` key trade-off decision in Phase 4. Do not skip this
-step; without it Phase 4's data-driven decision has nothing to compare against.
+`scout/measures/jvm-benchmarks` was run (full suite, all 10 scenarios, 68 benchmark
+methods) against the original, unmodified `scout/` codebase. Results archived at
+`.ai/benchmarks/baseline/` (`control.csv` raw values, `compare.txt` formatted table,
+`README.md` with environment metadata and headline numbers). This is the reference
+point for Phase 4's benchmark comparison and `compiled-keys` fate decision — Phase 1 is
+now fully checked off, Phase 2 can start.
 
 ## 📜 Interaction rules
 
