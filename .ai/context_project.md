@@ -31,6 +31,13 @@
 
 ## Module architecture
 
+**Physical location note**: the diagram below describes `scout/`, the **original,
+frozen** JVM-only codebase — kept untouched for the rest of the migration as a
+benchmark/reference baseline. All new multiplatform code lives in a separate,
+standalone `scout-kmp/` Gradle project (own `settings.gradle.kts`/wrapper), built up
+one module at a time as each migration phase reaches it (starting with `scout-kmp/core`
+in Phase 2, copied+adapted from `scout/scout/core` below, never `git mv`'d in place).
+
 ```
 scout/
 ├── scout/core        ← BASE module. Pure DI logic. Primary candidate for commonMain.

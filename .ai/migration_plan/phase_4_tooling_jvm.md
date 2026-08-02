@@ -4,13 +4,17 @@
 
 This phase has two distinct halves — do not conflate them:
 
-1. **JVM tooling adaptation**: adapt the existing JVM-only tooling ecosystem —
-   `scout/inspector`, `scout/validator`, `tools/classgraph-collector`, and
-   `tools/scout-gradle-plugin` (including the `compiled-keys` bytecode-rewriting
-   feature) — so it continues to work correctly against the new multiplatform `core`
-   produced in Phase 2. **None of these existing modules are being replaced or ported**
-   — they stay JVM-only by design (see `design_philosophy.md` on why ClassGraph +
-   reflection cannot run on Kotlin/Native).
+1. **JVM tooling adaptation**: create `scout-kmp/inspector`, `scout-kmp/validator`,
+   `scout-kmp/tools/classgraph-collector`, and `scout-kmp/tools/scout-gradle-plugin`
+   (including the `compiled-keys` bytecode-rewriting feature, if kept) as **new modules
+   inside the `scout-kmp/` standalone project**, copied+adapted from their `scout/`
+   originals so they work correctly against the new multiplatform `scout-kmp/core`
+   produced in Phase 2. The original `scout/scout/inspector`, `scout/scout/validator`,
+   `scout/tools/classgraph-collector`, `scout/tools/scout-gradle-plugin` are **never
+   edited** — they remain the frozen JVM-only reference baseline (see `.ai/README.md`
+   "Physical code location"). **None of these modules are being redesigned** — they
+   stay JVM-only by design in their new `scout-kmp/` location too (see
+   `design_philosophy.md` on why ClassGraph + reflection cannot run on Kotlin/Native).
 2. **New cross-platform KSP validator (new work, not a port)**: build a new,
    additional component-collection tool using Kotlin Symbol Processing, wired only into
    test compilations (`kspJvmTest`, `kspIosX64Test`, `kspIosArm64Test`,
@@ -23,21 +27,28 @@ This phase has two distinct halves — do not conflate them:
 
 ## 📍 Starting state (read before starting)
 
-- `.ai/migration_plan/phase_2_refactoring_shared.md` — confirm `core`'s `jvm` target is
-  stable and its `KClass<*>`-based key API is final before starting this phase.
-- `scout/scout/inspector/src/main/kotlin/scout/inspector/ScopeInspector.kt` — uses
-  `java.util.Collections`; confirm no behavior change is needed beyond dependency
-  wiring to the new `core`.
-- `scout/scout/validator/src/main/kotlin/scout/validator/**` — heavy use of
-  `java.lang.reflect.Method`, `InvocationTargetException`; this module is JVM-only by
-  necessity, do not attempt multiplatform port.
-- `scout/tools/classgraph-collector/src/main/**` — depends on the ClassGraph library
-  (JVM classpath scanning); inherently JVM-only.
-- `scout/tools/scout-gradle-plugin/src/main/**` — bcel-based bytecode rewriting plugin
-  that implements `compiled-keys`; this is a **build-time tool**, not a library
-  artifact, and stays JVM-only regardless of KMP adoption elsewhere.
-- `scout/scout/core/src/compiled-keys/kotlin/scout/**` — the `compiled-keys` source set
-  left untouched since Phase 2; this phase decides its final fate.
+- `.ai/migration_plan/phase_2_refactoring_shared.md` — confirm `scout-kmp/core`'s `jvm`
+  target is stable and its `KClass<*>`-based key API (via the `DiKey`/`diKeyOf` seam) is
+  final before starting this phase.
+- `scout/scout/inspector/src/main/kotlin/scout/inspector/ScopeInspector.kt` — **read-only
+  reference**; uses `java.util.Collections`; confirm no behavior change is needed
+  beyond copying into `scout-kmp/inspector` with updated dependency coordinates and
+  renamed package.
+- `scout/scout/validator/src/main/kotlin/scout/validator/**` — **read-only reference**;
+  heavy use of `java.lang.reflect.Method`, `InvocationTargetException`; this module is
+  JVM-only by necessity, its `scout-kmp/validator` copy stays JVM-only too, do not
+  attempt a multiplatform port.
+- `scout/tools/classgraph-collector/src/main/**` — **read-only reference**; depends on
+  the ClassGraph library (JVM classpath scanning); inherently JVM-only, copy as-is
+  (updating only dependency coordinates) into `scout-kmp/tools/classgraph-collector`.
+- `scout/tools/scout-gradle-plugin/src/main/**` — **read-only reference**; bcel-based
+  bytecode rewriting plugin that implements `compiled-keys`; this is a **build-time
+  tool**, not a library artifact, and stays JVM-only regardless of KMP adoption
+  elsewhere; if kept (see decision below), it is copied into
+  `scout-kmp/tools/scout-gradle-plugin` with its signature-matching logic updated.
+- `scout/scout/core/src/compiled-keys/kotlin/scout/**` — the `compiled-keys` source set,
+  **read-only reference only**, left untouched in `scout/` and never copied into
+  `scout-kmp/core` in Phase 2; this phase decides its final fate for `scout-kmp`.
 - `.ai/context_project.md` — "compiled-keys" glossary entry and JVM-dependency table.
 - `.ai/design_philosophy.md` — "`KClass` → `Int` key evolution" section explains
   **why** `compiled-keys` exists (measured JVM class-loading/hashing/caching costs of
@@ -63,51 +74,62 @@ This phase has two distinct halves — do not conflate them:
 
 ## 📋 Checklist (Definition of Done)
 
-### Part A — JVM tooling adaptation (existing modules, no replacement)
+### Part A — JVM tooling adaptation (existing modules, copied into `scout-kmp/`, no redesign)
 
-- [ ] `scout/scout/inspector` and `scout/scout/validator` build.gradle files are
-      updated (if not already done in Phase 2) to depend on the `jvm` target artifact of
-      the multiplatform `core`, and both modules' existing test suites pass unmodified.
-- [ ] `tools/classgraph-collector` compiles against the new `core` `jvm` artifact with
-      no source changes beyond dependency coordinates.
+- [ ] `scout-kmp/inspector` and `scout-kmp/validator` are created as copies of
+      `scout/scout/inspector`/`scout/scout/validator` (package renamed, build files
+      rewritten as `.gradle.kts` depending on `scout-kmp/core`'s `jvm` target artifact),
+      and both modules' existing test suites (also copied) pass unmodified in their new
+      location.
+- [ ] `scout-kmp/tools/classgraph-collector` is created as a copy of
+      `scout/tools/classgraph-collector`, compiling against `scout-kmp/core`'s `jvm`
+      artifact with no source changes beyond dependency coordinates and package rename.
 - [ ] Explicit decision recorded (with user sign-off) on whether to **swap the JVM/
       Android `DiKey`/`diKeyOf` actual** (the `expect`/`actual` seam already built in
-      Phase 2, currently `KClass`-backed on both platforms) **to an `Int`-backed
-      implementation** using `compiled-keys`: either (a) swap it, keeping
-      `compiled-keys` as a JVM-only opt-in layered behind the existing seam — the iOS
-      actual and all `commonMain` call sites remain untouched since they only ever call
-      `diKeyOf`, or (b) leave JVM/Android on the same plain-`KClass` actual as iOS
-      permanently and deprecate/remove `compiled-keys` + `scout-gradle-plugin`. **This
-      decision must be based on the benchmark comparison below, not made speculatively,
-      and only decides which actual implementation JVM/Android uses — the abstraction
-      itself is already built and is not being changed.**
-- [ ] **Benchmark comparison against the Phase-1 baseline is completed first**: re-run
-      the same `measures/jvm-benchmarks` suite (cold/warm get, graph init at 5/25/125
-      nodes, constant get, etc.) against the new multiplatform `core`'s `jvm` target,
-      and compare against the baseline captured in Phase 1 (`.ai/benchmarks/baseline/`).
-      Document the measured regression (if any) from the `KClass`-based `class-keys`
-      port before deciding `compiled-keys`'s fate — this is the data point the Phase 1/2
-      deferral was explicitly waiting for.
-- [ ] If option (a) is chosen: `scout-gradle-plugin`'s bytecode rewriting logic is
-      verified to still correctly target the `jvm`-compiled classfiles produced by the
-      new multiplatform build (Kotlin/JVM classfile output format must not have changed
-      in a way that breaks bcel parsing), **and** its hardcoded method signature
-      matching (`"(Ljava/lang/Class;)I"`) is updated to match the new `diKeyOf(KClass<T>):
-      DiKey` portal introduced in Phase 2 — this rewrite is required regardless of the
-      compiled-keys fate decision, because the signature change alone already breaks the
-      plugin's pattern matching.
-- [ ] If option (b) is chosen: `compiled-keys` source set, its build.gradle
-      `withCompiledKeys` conditional, and the `scout-gradle-plugin` module are removed or
-      clearly marked deprecated, with `release-compiled.sh` and `release-plugin.sh`
-      scripts updated or retired accordingly.
-- [ ] `measures/jvm-benchmarks` and `measures/graph-generator-plugin` are updated to
-      reference the new `core` coordinates and still run successfully, since they
-      benchmark real performance characteristics that must not silently regress due to
-      the multiplatform refactor.
+      Phase 2, currently `KClass`-backed on both platforms, inside `scout-kmp/core`)
+      **to an `Int`-backed implementation** using `compiled-keys`: either (a) swap it,
+      creating `scout-kmp/tools/scout-gradle-plugin` (copied+adapted from
+      `scout/tools/scout-gradle-plugin`) as a JVM-only opt-in layered behind the existing
+      seam — the iOS actual and all `commonMain` call sites remain untouched since they
+      only ever call `diKeyOf`, or (b) leave JVM/Android on the same plain-`KClass`
+      actual as iOS permanently and never create a `scout-kmp` copy of
+      `scout-gradle-plugin` at all. **This decision must be based on the benchmark
+      comparison below, not made speculatively, and only decides which actual
+      implementation JVM/Android uses — the abstraction itself is already built and is
+      not being changed. Either way, `scout/tools/scout-gradle-plugin` itself is never
+      edited — it remains the untouched original.**
+- [ ] **Benchmark comparison against the Phase-1 baseline is completed first**: run the
+      same `measures/jvm-benchmarks` suite methodology (cold/warm get, graph init at
+      5/25/125 nodes, constant get, etc.) — copied into `scout-kmp/measures/jvm-benchmarks`
+      and adapted to depend on `scout-kmp/core` — and compare against the baseline
+      captured in Phase 1 from the original, untouched `scout/measures/jvm-benchmarks`
+      (`.ai/benchmarks/baseline/`). Document the measured regression (if any) from the
+      `KClass`-based `class-keys` port before deciding `compiled-keys`'s fate for
+      `scout-kmp` — this is the data point the Phase 1/2 deferral was explicitly waiting
+      for.
+- [ ] If option (a) is chosen: `scout-kmp/tools/scout-gradle-plugin`'s bytecode
+      rewriting logic is verified to correctly target the `jvm`-compiled classfiles
+      produced by the `scout-kmp/core` build (Kotlin/JVM classfile output format must not
+      differ in a way that breaks bcel parsing), **and** its hardcoded method signature
+      matching (`"(Ljava/lang/Class;)I"`) is updated to match the new
+      `diKeyOf(KClass<T>): DiKey` portal introduced in Phase 2 — this rewrite is
+      required regardless of the compiled-keys fate decision, because the signature
+      change alone already breaks the plugin's pattern matching.
+- [ ] If option (b) is chosen: no `scout-kmp/tools/scout-gradle-plugin` module is
+      created at all; document in `scout-kmp`'s own README that `compiled-keys` was
+      evaluated and intentionally not ported, with a link to the benchmark comparison
+      data justifying the decision.
+- [ ] `scout-kmp/measures/jvm-benchmarks` and (if needed) a `scout-kmp` equivalent of
+      `measures/graph-generator-plugin` are created referencing `scout-kmp/core`'s
+      coordinates and run successfully, since they benchmark real performance
+      characteristics that must not silently regress relative to the Phase 1 baseline.
+      The original `scout/measures/*` stays untouched, still runnable as the baseline
+      reference forever.
 
 ### Part B — New cross-platform KSP validator (new module, additive)
 
-- [ ] A new Gradle module (e.g. `tools/ksp-component-collector`) is created containing
+- [ ] A new Gradle module (e.g. `scout-kmp/tools/ksp-component-collector`) is created
+      containing
       a KSP `SymbolProcessorProvider` that scans for `Component` subclasses (or a
       dedicated marker annotation, e.g. `@ScoutComponent`, if plain-subclass detection
       proves awkward in KSP — decide and document which detection strategy is used) and
@@ -140,16 +162,21 @@ This phase has two distinct halves — do not conflate them:
 
 ## ⚠️ Anti-patterns (forbidden on this phase)
 
+- Do **not** edit any file under `scout/` (the original) in this phase, or any phase —
+  it is the permanently frozen reference baseline. All work happens by creating new
+  files/modules under `scout-kmp/`.
 - Do **not** attempt to port `java.lang.reflect`-based validator/inspector logic into
   `commonMain` — reflection-heavy tooling is legitimately JVM-only; forcing a common
   abstraction here adds complexity with no multiplatform benefit. Build the new KSP
-  collector as a **separate, additive** module instead of modifying `scout/validator`.
+  collector as a **separate, additive** module (`scout-kmp/tools/ksp-component-collector`)
+  instead of modifying `scout-kmp/validator` or the original `scout/validator`.
 - Do **not** decide the fate of `compiled-keys` unilaterally — this is a
   backward-compatibility-affecting decision for existing JVM consumers of the library
   and requires explicit user sign-off.
-- Do **not** break the existing `release-base.sh` / `release-compiled.sh` /
-  `release-plugin.sh` / `release-all.sh` publishing scripts without updating them in the
-  same change — a partially-updated release pipeline is worse than an unchanged one.
+- Do **not** break the existing `scout/release-base.sh` / `scout/release-compiled.sh` /
+  `scout/release-plugin.sh` / `scout/release-all.sh` publishing scripts — they are part
+  of the frozen `scout/` original and are never edited. `scout-kmp/` gets its own,
+  separate publishing scripts (Phase 5 concern) for the new Maven coordinates.
 - Do **not** silently change benchmark methodology in `measures/jvm-benchmarks` while
   "just updating dependencies" — flag any measured performance change explicitly.
 - Do **not** write `kspCommonTest` (or any other made-up "common" KSP configuration

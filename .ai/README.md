@@ -41,6 +41,7 @@ CONFIRMED by the user — do not re-litigate them without explicit new instructi
 | Decision | Choice | Rationale |
 |---|---|---|
 | **First-iteration target platforms** | **JVM/Android + iOS** (JS/Wasm explicitly deferred to a later, separate phase) | iOS has a usable `WeakReference` equivalent for `ReusableInstanceFactory`; JS/Wasm has none and would also force premature decisions on the validator's classpath-reflection model. Starting with 3 target families at once was rejected as too high blast-radius for an unstable core. |
+| **Physical code location** | All new KMP code lives in a **new, separate top-level `scout-kmp/` directory** — a standalone Gradle multiplatform project (own `settings.gradle.kts`, own Gradle wrapper), not a Kotlin package inside `scout/`. The original `scout/` directory is **never modified** for the rest of this migration — it is kept byte-for-byte as the JVM-only reference baseline. New modules (`core`, later `inspector`/`validator`/`androidApp`/`iosApp`/the KSP collector) are added to `scout-kmp/` incrementally, one per phase, by **copying and adapting** code from the corresponding `scout/` module — never by `git mv`/in-place edits. | Keeps `scout/` as a trustworthy, untouched baseline for benchmark comparisons (Phase 1 baseline vs Phase 4 comparison) and licensing/attribution clarity, makes rollback trivial (delete `scout-kmp/`), and allows incremental, side-by-side development without ever leaving the original library in a broken intermediate state. Confirmed 2026-08-02; supersedes any earlier phase wording that talked about "moving"/"renaming in place" `scout/scout/core` — that language now means "copy into `scout-kmp/core`, adapt, leave the `scout/` original untouched". |
 | **Package namespace** | Rename Kotlin package `scout.*` → **`dev.gekko.scout.*`** now, before Phase 2 starts | Kotlin package namespace and Maven group are independent axes; the fork needed its own namespace before commonMain work begins to avoid a second disruptive rename later. |
 | **Kotlin version** | Bump from `1.8.22` to the current stable Kotlin release before Phase 2 | 1.8.22 predates modern KMP tooling maturity (Xcode/Kotlin Native target support, commonizer improvements); upgrading first avoids doing the KMP conversion twice. |
 | **`compiled-keys` fate on JVM/Android** | **Still deferred to Phase 4** — decision remains data-driven from the benchmark comparison, NOT changed by the iOS decision below. **Architecture pre-work now done in Phase 2**: the `DiKey`/`diKeyOf` `expect`/`actual` seam is built ahead of time so JVM/Android can later swap to an `Int`-backed actual without touching any `commonMain` call site; Phase 4 only decides *which* actual JVM/Android uses, not whether the abstraction exists | Porting `class-keys` to `commonMain` already requires `KClass<*>` instead of `Class<*>`, which independently breaks the `scout-gradle-plugin`'s bcel bytecode pattern matching (hardcoded signature `"(Ljava/lang/Class;)I"`, see `design_philosophy.md`). Capture a **benchmark baseline on the current, unmodified JVM-only code** (see below) before any core changes, then re-run the same benchmarks after Phase 2 to measure the actual regression and decide with real data. A 2026-07-26 standalone micro-benchmark (`.ai/experiments/kclass-benchmark/`) already shows ~9.2x `KClass`-vs-`Int` `HashMap` lookup overhead on JVM — real, but the full-graph benchmark comparison is still the basis for the final decision. |
@@ -73,9 +74,14 @@ step; without it Phase 4's data-driven decision has nothing to compare against.
 5. **Do not delete existing JVM-only modules** (`inspector`, `validator`,
    `tools/classgraph-collector`, `tools/scout-gradle-plugin`) — they remain JVM-specific
    by architectural decision (see `context_project.md`).
-6. **All repository content must be in English** — code, comments, KDoc, commit
+6. **Never edit files under `scout/` (the original repo root subdirectory).** It is the
+   frozen JVM-only reference baseline for the rest of this migration. All new/ported
+   code goes into the separate `scout-kmp/` directory (own standalone Gradle project),
+   built up module-by-module as each phase reaches it — see "Physical code location" in
+   the decisions table above.
+7. **All repository content must be in English** — code, comments, KDoc, commit
    messages, and everything under `.ai/`.
-7. When anything is ambiguous — **stop and ask the user**, don't guess.
+8. When anything is ambiguous — **stop and ask the user**, don't guess.
 
 ## 📖 Project glossary
 
@@ -90,14 +96,25 @@ step; without it Phase 4's data-driven decision has nothing to compare against.
 | **compiled-keys** | Dependency key variant based on `Int`, substituted by the `scout-gradle-plugin` bytecode plugin (bcel). Entirely JVM bytecode specific, **not portable** to KMP as-is. |
 | **inspector** | Module for inspecting `Scope` content (used by the validator). JVM-only, uses reflection. |
 | **validator** | Module for validating the dependency graph (consistency/overrides/naming checks). JVM-only. |
-| **shared module** | Target KMP module (`commonMain`/`jvmMain`/...) that `scout/core` will be moved into. Created in Phase 2. |
-| **androidApp / iosApp / composeApp** | Platform consumer modules of the shared library. **Do not exist yet**, created in Phase 3. |
+| **shared module** | Target KMP module (`commonMain`/`jvmMain`/...), physically located at **`scout-kmp/core`** (a new, standalone module — not a modification of `scout/scout/core`). Populated by copying+adapting code from `scout/scout/core` in Phase 2. |
+| **androidApp / iosApp / composeApp** | Platform consumer modules of the shared library, to be created under **`scout-kmp/`**. **Do not exist yet**, created in Phase 3 (`composeApp` deferred). |
+| **`scout/` vs `scout-kmp/`** | `scout/` is the original, JVM-only codebase — **frozen, never edited** for the rest of this migration, used only as a read reference and as the source of the Phase 1/Phase 4 benchmark baseline. `scout-kmp/` is the new, standalone multiplatform Gradle project where all migration work actually happens, built up incrementally (one module copied+adapted per phase, starting with `core`). |
 | **Qualifiers (Koin/Dagger concept)** | Deliberately **not supported** in Scout. Instances of the same type are disambiguated via dedicated wrapper classes (e.g. `IoScheduler(val instance: Scheduler)`), not string/annotation qualifiers. Do not reintroduce qualifiers during the KMP port. |
 | **`element` / `mapping`** | Explicit multibinding factory kinds — `element<T>` contributes to a `List<T>` (read via `collect`), `mapping<K,V>` contributes to a `Map<K,V>` (read via `associate`). Intentionally explicit instead of Koin's implicit `getAll`. |
 | **`allowOverride`** | Required flag to intentionally redefine an existing factory; silent overrides are treated as bugs by design (this caused real production incidents at Yandex Market before the flag existed). |
 | **"Smart get" anti-pattern** | A historical, reverted design where a single `get<T>()` used `typeOf<T>()` to auto-detect `Lazy`/`Provider`/collection/nullable wrapping. Caused a severe startup performance regression at Yandex Market and was replaced by today's explicit `get`/`opt`/`getLazy`/`getProvider`/`collect`/`associate` method family. **Never reintroduce this pattern.** See `design_philosophy.md`. |
 | **`KClass` non-caching problem** | Kotlin does not cache `KClass` instances (`X::class === X::class` is `false`), and touching a `KClass`/`Class<*>` forces JVM class loading. This was the original motivation for `compiled-keys`. Porting `class-keys` to `commonMain` via `KClass<*>` reintroduces this exact cost on JVM — see `design_philosophy.md` before assuming performance parity. **This problem is JVM-ClassLoader-specific and does not exist on Kotlin/Native at all** — the iOS target uses `KClass<*>`-based `class-keys` unconditionally, this is not a trade-off on iOS, just the only option. |
 | **KSP-based validator (planned)** | A new, additional Kotlin Symbol Processing–based component collector, wired **only into test compilations** (`kspJvmTest`, `kspIosX64Test`, etc. — there is no single `kspCommonTest` configuration, KSP is per-target), generating direct non-reflective invocation code instead of using `ClassGraph`+`java.lang.reflect`. Built to unblock graph validation on iOS/Native, where classpath scanning and reflection don't exist. **Does not replace** the existing JVM `scout/validator`/`tools/classgraph-collector`, which remain the proven JVM/Android validation path. |
+
+## 🗂️ Repository layout (top level)
+
+```
+scout/          # ORIGINAL codebase — frozen, read-only reference baseline. Never edit.
+scout-kmp/      # NEW multiplatform project (own settings.gradle.kts/gradlew), built up
+                # incrementally: core (Phase 2) → androidApp/iosApp (Phase 3) →
+                # inspector/validator/ksp-collector (Phase 4) → ...
+.ai/            # this knowledge base
+```
 
 ## 🗂️ `.ai/` structure
 

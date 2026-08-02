@@ -83,7 +83,9 @@ recorded in this file's checklist and, if needed, follow-up notes appended to
 ## ⚠️ Anti-patterns (forbidden on this phase)
 
 - Do **not** modify any source file under `scout/scout/**` or `scout/tools/**` in this
-  phase — this is a read-only analysis phase.
+  phase, or in **any subsequent phase of this migration** — `scout/` is the permanently
+  frozen JVM-only reference baseline; all new/ported code lives in a separate
+  `scout-kmp/` directory (see `.ai/README.md` "Physical code location" decision).
 - Do **not** assume the Maven group and Kotlin package are the same thing — verify both
   independently, they may need different decisions.
 - Do **not** silently rename or remove `Copyright 2023 Yandex LLC` headers when

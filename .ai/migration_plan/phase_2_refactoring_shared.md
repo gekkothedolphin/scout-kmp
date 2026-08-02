@@ -2,17 +2,26 @@
 
 ## 🎯 Goal
 
-Turn `scout/scout/core` into a genuine Kotlin Multiplatform module with a
-`commonMain` source set containing all platform-agnostic DI logic, backed by
+Create a genuine Kotlin Multiplatform module — **`scout-kmp/core`**, inside a new
+standalone Gradle project (`scout-kmp/`, own `settings.gradle.kts` + Gradle wrapper) —
+with a `commonMain` source set containing all platform-agnostic DI logic, backed by
 `jvmMain` and `iosMain`/`iosArm64Main`/`iosSimulatorArm64Main`/`iosX64Main` actuals
 (confirmed target set: **JVM/Android + iOS** for this iteration; JS/Wasm explicitly
 out of scope) for the handful of platform-specific APIs identified during analysis.
-This phase also executes the confirmed package rename (`scout.*` →
-`dev.gekko.scout.*`) and the Kotlin version bump, since both must happen before or
-alongside the multiplatform conversion to avoid a second disruptive rename later. All
-downstream JVM-only modules (`inspector`, `validator`, `classgraph-collector`) must
-keep compiling against the new `jvm` target of `core` without any public API break
-beyond the confirmed package/key-type changes.
+
+**This is a copy-and-adapt operation, not a move.** The original `scout/scout/core` is
+**never edited** — it stays exactly as-is, permanently, as the JVM-only reference
+baseline for benchmark comparisons and rollback safety (see `.ai/README.md` "Physical
+code location" decision). Code is read from `scout/scout/core`, then written into
+`scout-kmp/core` with the package rename and Kotlin version already applied at copy
+time — there is no separate "rename scout/ in place" step anymore.
+
+Downstream JVM-only modules (`inspector`, `validator`, `classgraph-collector`) are
+**not** touched in this phase — they keep compiling against the original, untouched
+`scout/scout/core` for now. Porting them to depend on the new `scout-kmp/core` (by
+creating `scout-kmp/inspector`, `scout-kmp/validator`, etc. as copies) is Phase 4's
+responsibility (see `phase_4_tooling_jvm.md` Part A), once the new core's public API is
+stable and benchmark-compared.
 
 ## 📍 Starting state (read before starting)
 
@@ -20,45 +29,52 @@ beyond the confirmed package/key-type changes.
   starting this phase; re-read its findings table (JVM API → replacement strategy).
 - `.ai/context_project.md` — package/namespace and Kotlin version decisions recorded
   during Phase 1.
-- `scout/scout/core/build.gradle` — current JVM-only plugin block to be replaced with
-  `org.jetbrains.kotlin.multiplatform`.
-- `scout/scout/core/src/main/kotlin/scout/**` — files to move into `commonMain`.
+- `.ai/README.md` — "Physical code location" decision: `scout-kmp/` is a new,
+  standalone top-level directory/Gradle project, sibling to `scout/`, not a
+  modification of it.
+- `scout/scout/core/build.gradle` — current JVM-only build script; **read for
+  reference only**, do not edit. `scout-kmp/core/build.gradle.kts` is a brand-new file
+  applying `org.jetbrains.kotlin.multiplatform` from scratch.
+- `scout/scout/core/src/main/kotlin/scout/**` — files to **copy** (not move) into
+  `scout-kmp/core/src/commonMain/kotlin/dev/gekko/scout/**`, renaming the package as
+  part of the copy.
 - `scout/scout/core/src/class-keys/kotlin/scout/**` — key definitions to adapt
-  (`Class<*>` → `KClass<*>`) and move into `commonMain`.
-- `scout/scout/core/src/compiled-keys/kotlin/scout/**` — must remain JVM-only; do not
-  attempt to port this variant in this phase (see Phase 4 for its fate).
-- `scout/scout/core/src/test/**` — existing JUnit5 tests to be migrated to
-  `kotlin.test` under `commonTest`/`jvmTest`.
-- `scout/scout/inspector/build.gradle`, `scout/scout/validator/build.gradle` — confirm
-  how they reference `scout_core_module`; this dependency wiring must be updated to
-  target the `jvm` variant of the new multiplatform `core`.
+  (`Class<*>` → `KClass<*>`) and copy into the same `commonMain` location.
+- `scout/scout/core/src/compiled-keys/kotlin/scout/**` — **read-only reference only**;
+  do not copy or attempt to port this variant in this phase (see Phase 4 for its fate —
+  Phase 4 may later add an `actual` implementation informed by this code, but that is
+  new code written against the `DiKey`/`diKeyOf` seam, not a copy of this source set).
+- `scout/scout/core/src/test/**` — existing JUnit5 tests, to be **copied and adapted**
+  to `kotlin.test` under `scout-kmp/core/src/commonTest`/`jvmTest`.
+- (Not needed yet) `scout/scout/inspector/build.gradle`, `scout/scout/validator/build.gradle`
+  — these stay untouched in this phase; their `scout-kmp/` equivalents are Phase 4 work.
 
 ## 📋 Checklist (Definition of Done)
 
-- [ ] Kotlin version is bumped from `1.8.22` to the current stable release (verify the
+- [ ] **Bootstrap the `scout-kmp/` standalone Gradle project**: create
+      `scout-kmp/settings.gradle.kts` (module name `scout-kmp`, `pluginManagement`/
+      `dependencyResolutionManagement` repositories: `google()`, `mavenCentral()`,
+      `gradlePluginPortal()`), copy a Gradle wrapper into `scout-kmp/gradle/` +
+      `scout-kmp/gradlew` (the current stable Gradle version, independent of `scout/`'s
+      pinned `8.2.1` if a newer wrapper is needed for the chosen Kotlin version), and a
+      root `scout-kmp/build.gradle.kts`. This project has **no dependency on `scout/`'s
+      Gradle build** — it is fully independent.
+- [ ] Kotlin version for `scout-kmp/` is set to the current stable release (verify the
       actual latest stable version at execution time — do not hardcode a version from
-      this planning document, which may already be outdated) across `versions.gradle`
-      and all module `build.gradle` files, and the project still builds on the `jvm`
-      target before any multiplatform conversion work starts (isolate the version bump
-      as its own verifiable commit/step).
-- [ ] Kotlin package namespace is renamed from `scout.*` to **`dev.gekko.scout.*`**
-      across all files in `scout/scout/core` (and transitively in `inspector`,
-      `validator`, `classgraph-collector`, `scout-gradle-plugin` once they're updated to
-      depend on the renamed `core`) — verify via grep that zero references to the bare
-      `package scout` / `import scout.` remain unrenamed. Update `AUTHORS`/license
-      header package references if any exist. This must be a dedicated, isolated
-      rename step (ideally its own commit) completed and verified building *before*
-      starting the `commonMain` extraction below, to keep the two changes independently
-      revertible/reviewable.
-- [ ] `scout/scout/core/build.gradle` applies `org.jetbrains.kotlin.multiplatform`
-      instead of `org.jetbrains.kotlin.jvm`, with `jvm()` and the iOS target set
-      (`iosArm64()`, `iosSimulatorArm64()`, `iosX64()` or the current recommended
-      Kotlin/Native default target list) declared.
-- [ ] `commonMain` contains: `Component`, `Scope`, `Injector`, `Provider`,
-      `Definition`/`Registry`, `InstanceFactory` and its `Single`/`Factory` strategies,
-      `Accessor`/`Interceptor` family, all `ScopeBuilder` variants, and all
-      `error`/`exception` types — verified by `grep` that none of these files import
-      `java.*`/`javax.*` after the move.
+      this planning document, which may already be outdated). This is independent of
+      `scout/`'s own pinned `1.8.22`, which remains unchanged forever.
+- [ ] `scout-kmp/core/build.gradle.kts` applies `org.jetbrains.kotlin.multiplatform`,
+      with `jvm()` and the iOS target set (`iosArm64()`, `iosSimulatorArm64()`,
+      `iosX64()` or the current recommended Kotlin/Native default target list)
+      declared.
+- [ ] `scout-kmp/core/src/commonMain` contains (copied and adapted from
+      `scout/scout/core/src/main`, package renamed to `dev.gekko.scout.*`): `Component`,
+      `Scope`, `Injector`, `Provider`, `Definition`/`Registry`, `InstanceFactory` and its
+      `Single`/`Factory` strategies, `Accessor`/`Interceptor` family, all `ScopeBuilder`
+      variants, and all `error`/`exception` types — verified by `grep` that none of
+      these files import `java.*`/`javax.*` after the copy, and that zero references to
+      the bare `package scout` / `import scout.` remain (all renamed to
+      `dev.gekko.scout.*`).
 - [ ] **Key abstraction seam** (`expect`/`actual`): introduce `expect class DiKey` in
       `commonMain`, replacing today's `Class<*>`-based `ObjectKey`/`CollectionKey`/
       `AssociationKey` typealiases, plus a single creation portal
@@ -99,27 +115,31 @@ beyond the confirmed package/key-type changes.
       equivalent behavior).
 - [ ] `ParentLookupUtils` no longer uses `java.util.Collections.unmodifiableList`;
       replaced with a common Kotlin API with identical immutability guarantees.
-- [ ] All package/namespace renames decided in Phase 1 (if any) are applied
-      consistently across `commonMain` and `jvmMain`, with no leftover references to the
-      old namespace.
-- [ ] Tests are migrated to `commonTest` (or `jvmTest`/`iosTest` where genuinely
-      platform-specific) using `kotlin.test`, and pass on both the `jvm` and iOS
-      (simulator) targets.
-- [ ] `scout/scout/inspector` and `scout/scout/validator` build.gradle dependency
-      declarations are updated to consume the multiplatform `core`'s `jvm` artifact, and
-      both modules compile and their existing test suites pass unmodified (no source
-      changes in `inspector`/`validator` beyond dependency wiring, unless an API break is
-      unavoidable and explicitly approved by the user).
-- [ ] `./gradlew build` succeeds for the whole `scout` root project.
+- [ ] Tests are copied and adapted to `commonTest` (or `jvmTest`/`iosTest` where
+      genuinely platform-specific) using `kotlin.test`, and pass on both the `jvm` and
+      iOS (simulator) targets, within `scout-kmp/core`.
+- [ ] `./gradlew build` succeeds for the standalone `scout-kmp/` project (its `core`
+      module only, at this point — downstream modules are added in later phases).
+      Separately, confirm `scout/` (the original project) still builds unmodified
+      exactly as before this phase started (e.g. `git diff --stat scout/` shows zero
+      changes) — this is the concrete proof the "never edit `scout/`" rule was honored.
 
 ## ⚠️ Anti-patterns (forbidden on this phase)
 
+- Do **not** edit, rename, or `git mv` **any** file under `scout/` in this phase — it is
+  the permanently frozen reference baseline. All work happens by creating new files
+  under `scout-kmp/`. If you find yourself wanting to change something in `scout/`,
+  stop — that almost certainly means you're confusing this phase with the pre-KMP-era
+  in-place refactor plan, which no longer applies.
+- Do **not** attempt to port/wire up `inspector`, `validator`, or `classgraph-collector`
+  in this phase, whether against `scout/` or `scout-kmp/` — that is Phase 4's
+  responsibility, once `scout-kmp/core`'s API is stable and benchmark-compared.
 - Do **not** touch the `compiled-keys` source set or `scout-gradle-plugin` in this
   phase — that is Phase 4's responsibility.
 - Do **not** change the public API surface of `core` (method signatures, class names)
   beyond the `Class<*>` → `KClass<*>` key type change explicitly required for KMP
   portability, unless the user explicitly approves a broader API change.
-- Do **not** silently drop `internal` visibility modifiers when moving files between
+- Do **not** silently drop `internal` visibility modifiers when copying files between
   source sets — multiplatform source sets support `internal` per source-set-hierarchy;
   verify visibility is preserved correctly.
 - Do **not** introduce new third-party multiplatform dependencies (e.g.
