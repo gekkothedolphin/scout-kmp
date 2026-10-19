@@ -165,8 +165,8 @@ This phase has two distinct halves — do not conflate them:
       `jvmTest` and an iOS simulator test target — parity with the existing JVM
       validator's failure behavior is the acceptance bar, not just "it compiles".
 - [ ] License and licensing-header compliance: the new module's source files carry the
-      fork's standard Apache 2.0 header (see `.ai/context_project.md` code style
-      section); no code is copied from `kotlin-inject`/`Metro` — architecture patterns
+      fork-only Apache 2.0 header `scripts/license_header_fork` (new code; copied
+      modules use `scripts/license_header_modified`, see `.ai/context_project.md`); no code is copied from `kotlin-inject`/`Metro` — architecture patterns
       only, not verbatim source.
 - [ ] Documentation added (module README or KDoc) explicitly stating: (a) this tool
       exists only to unblock iOS/Native validation, (b) the JVM/Android path continues

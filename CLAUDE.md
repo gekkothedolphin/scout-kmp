@@ -23,7 +23,7 @@ docs/        User-facing docs for the original library (scope anatomy, validatio
 - Kotlin package `scout.*` becomes `dev.gekko.scout.*`, and the Maven group is `io.github.gekkothedolphin` (artifacts `scout-*`; group and package intentionally differ). The rename happens as you copy. `scout/` keeps `com.yandex.scout` and `scout.*`.
 - Targets for this iteration are JVM/Android and iOS (`iosX64`, `iosArm64`, `iosSimulatorArm64`). JS/Wasm is deferred.
 - Modules are added to `scout-kmp/` one phase at a time. Right now only `:core` exists, and it holds a bootstrap placeholder. Phase 2 (porting `scout/scout/core` into `commonMain`) is next. It is split into Steps 2.0–2.5 and starts with a KSP feasibility spike. Check the "Open questions" section of `.ai/README.md` before a step that depends on one.
-- Keep the original `Copyright 2023 Yandex LLC` headers. Only append `Copyright 2026 gekkothedolphin@gmail.com`.
+- License headers: a file copied from `scout/` keeps the Yandex header and gets the line `Modifications copyright 2026 gekkothedolphin@gmail.com` right under it (template `scripts/license_header_modified`). A file written from scratch gets the fork-only header (`scripts/license_header_fork`). Never remove the Yandex line and never put it on code written from scratch.
 - Everything committed (code, comments, commit messages, `.ai/`) must be in English.
 - After meaningful progress, update the status in `.ai/README.md` and the checklist in the matching phase file. Tick an item `[x]` only after the build or tests actually pass. Keep each commit or PR to one phase.
 
@@ -50,7 +50,7 @@ cd scout
 ```
 The benchmark baseline taken on the unmodified `scout/` is archived in `.ai/benchmarks/baseline/`. Phase 4 compares against it.
 
-License headers: `./scripts/check-license-headers.sh` (runs in CI; `--correct` adds missing headers). It compares the first 15 lines of every `*.kt` with `scripts/license_header`.
+License headers: `./scripts/check-license-headers.sh` (runs in CI). Files in `scout/` must match `scripts/license_header` (original Yandex); everywhere else either `license_header_modified` or `license_header_fork`. `build/` outputs and `.ai/experiments/` are skipped. `--correct` adds the fork header only to files that have no header at all; a Yandex header missing the "Modifications" line is reported, not rewritten.
 
 ## Architecture (original `scout/`, the porting source)
 

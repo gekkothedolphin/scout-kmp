@@ -27,9 +27,11 @@ Responsibilities:
 - Work in **atomic phases** (see `migration_plan/`) — do not skip ahead.
 - After any meaningful change, update the status in this file and the checklists in the
   corresponding `phase_*.md`.
-- Never remove or rewrite original copyright headers (`Copyright 2023 Yandex LLC`) —
-  only append to them (`Copyright 2026 gekkothedolphin@gmail.com`), as already done in
-  the root `README.md`.
+- Never remove or rewrite original copyright headers (`Copyright 2023 Yandex LLC`).
+  Code copied from `scout/` keeps it and gets `Modifications copyright 2026
+  gekkothedolphin@gmail.com` right below (`scripts/license_header_modified`); code
+  written from scratch gets the fork-only header (`scripts/license_header_fork`).
+  `scripts/check-license-headers.sh` enforces this (confirmed 2026-10-19).
 
 ## 📍 Current status
 
@@ -97,9 +99,9 @@ The plan was checked against the actual `scout/` sources. Changes made:
 1. ~~**Maven Central namespace.**~~ Resolved 2026-10-19: Maven group
    `io.github.gekkothedolphin`, Kotlin package stays `dev.gekko.scout` (see decisions
    table).
-2. **License-header policy for `scout-kmp/`.** `scripts/check-license-headers.sh`
-   requires the Yandex header in every `*.kt` in the repo; brand-new fork files fail
-   it. Decide the header rule for brand-new files (Phase 2 Step 2.1).
+2. ~~**License-header policy.**~~ Resolved 2026-10-19 (option A): two accepted headers
+   outside `scout/` (`license_header_modified` for copied code, `license_header_fork`
+   for new code), enforced by `scripts/check-license-headers.sh`.
 3. **`reusable` on iOS:** weak reference (best-effort, usually recreated), strong cache
    cleared on memory warning, or strong reference (≈ `singleton`). Needed before
    Phase 2 Step 2.4.

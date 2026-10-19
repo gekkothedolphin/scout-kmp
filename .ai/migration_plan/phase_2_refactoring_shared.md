@@ -102,15 +102,12 @@ these only after `./gradlew build` actually passes.
       `ubuntu-latest` and `./gradlew :core:iosSimulatorArm64Test` on a `macos-*` runner.
       Publishing CI stays in Phase 5; this job exists so a regression is caught from the
       first ported file instead of three phases later.
-- [ ] License-header policy agreed with the user and applied (open question, see
-      `.ai/README.md`). `scripts/check-license-headers.sh` requires the Yandex header
-      from `scripts/license_header` in the first 15 lines of **every** `*.kt` in the
-      repository, including `scout-kmp/` and `.ai/experiments/`. Brand-new files such as
-      `Placeholder.kt` carry only the fork header and fail the check as soon as CI runs.
-      Copied files keep the Yandex header plus the appended fork line; brand-new files
-      need a rule (fork-only header accepted by the script, or the combined header).
-      The script lives in the repo-root `scripts/`, outside `scout/`, so changing it does
-      not break the "never edit `scout/`" rule.
+- [x] License-header policy agreed with the user and applied (option A, 2026-10-19).
+      `scripts/check-license-headers.sh` now accepts `license_header` in `scout/`
+      only, and `license_header_modified` (copied + adapted code) or
+      `license_header_fork` (new code) everywhere else; `build/` and
+      `.ai/experiments/` are skipped. Verified: the whole repository passes, and test
+      files with no header / with a bare Yandex header are both reported.
 
 ### Step 2.2 — Port core into `commonMain` (JVM target first)
 
@@ -227,8 +224,9 @@ block the JVM port. They come back in Step 2.4.
 - Do **not** introduce new third-party multiplatform dependencies (e.g.
   `kotlinx-atomicfu`) without confirming license compatibility (Apache 2.0 or
   equivalent permissive license) and recording it in `context_project.md`.
-- Do **not** modify or delete existing Yandex copyright headers in files being moved —
-  copy them as-is into the new source set location.
+- Do **not** modify or delete existing Yandex copyright headers in files being copied —
+  keep them and add the `Modifications copyright 2026 gekkothedolphin@gmail.com` line
+  right below (template `scripts/license_header_modified`).
 - Do **not** implement an `Int`-backed `DiKey` actual for JVM/Android in this phase,
   even as a "just in case" optimization — that swap is Phase 4's decision, made from
   measured benchmark data (see `phase4-compiled-keys-decision`), not something to

@@ -105,10 +105,13 @@ Known JVM dependencies in `core` requiring `expect`/`actual` when porting:
 
 ## Code style and licensing
 
-- Every Kotlin file starts with an Apache 2.0 license header, generated/checked by
-  `scripts/license_header` — **do not remove or alter existing `Copyright 2023 Yandex
-  LLC` headers**, only append the new line `Copyright 2026 gekkothedolphin@gmail.com`
-  where this has already been done at the repository level (see root `README.md`).
+- Every Kotlin file starts with an Apache 2.0 license header, checked by
+  `scripts/check-license-headers.sh` (CI). Three templates in `scripts/`:
+  `license_header` (original Yandex, required in `scout/`), `license_header_modified`
+  (Yandex + `Modifications copyright 2026 gekkothedolphin@gmail.com`, for files copied
+  from `scout/` and adapted) and `license_header_fork` (fork-only, for files written
+  from scratch). **Do not remove or alter existing `Copyright 2023 Yandex LLC` lines**,
+  and do not put them on code written from scratch.
 - `internal` visibility is used consistently for implementation details
   (`ThreadConfinementCheck`, `BuiltinKeys` in the class-keys variant, etc.) — preserve
   this encapsulation level when porting to multiplatform source sets.
