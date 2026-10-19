@@ -178,15 +178,27 @@ block the JVM port. They come back in Step 2.4.
       `NSThread.currentThread` or `pthread_self()` from `platform.posix`). The error
       message must still name both threads (or thread ids on iOS).
 - [ ] `ReusableInstanceFactory`'s `SoftReference` usage is put behind an
-      `expect`/`actual`, and the `jvmMain actual` keeps soft-reference semantics exactly.
-      The iOS behaviour is a **user decision** made before implementing (open question,
-      see `.ai/README.md`): Kotlin/Native has no soft reference, and a
-      `kotlin.native.ref.WeakReference` is cleared at the next GC, so `reusable` would
-      behave almost like `factory`. Options: (a) weak reference, documented as
-      "best-effort, usually recreated"; (b) strong cache cleared on a memory warning;
-      (c) strong reference, which behaves like `singleton`. Whatever is chosen is
-      documented in KDoc. Also note that the original class is not thread-safe (plain
-      `var`, no lock). Keep that as-is on JVM (no behaviour change) and document it.
+      `expect`/`actual`, and the `jvmMain actual` keeps soft-reference semantics exactly
+      (no behaviour change for JVM/Android consumers).
+- [ ] `iosMain actual` is backed by **`platform.Foundation.NSCache`** (decision
+      2026-10-19, see `.ai/README.md` decisions table). Kotlin/Native has no soft
+      reference; `NSCache` is the Apple-native "keep while memory allows" cache and the
+      closest match to `SoftReference`. Implementation notes:
+      - one shared `NSCache` for all reusable factories, keyed by the factory object
+        (`NSCache` does not copy keys); Kotlin objects are stored as ObjC objects;
+      - no UIKit dependency and no memory-warning observer: eviction is done by the
+        system, so the same code also works on future Apple targets without UIKit;
+      - `NSCache` is thread-safe, which also removes the unsynchronized `var` race the
+        JVM original has (JVM keeps its original behaviour unchanged);
+      - a `null` result from the definition is not cached (same as the JVM original,
+        which only wraps non-null instances); `NSCache` cannot store `nil` anyway;
+      - KDoc states the semantics plainly: the instance may be evicted at any time the
+        system decides (memory pressure, possibly app backgrounding) and is then
+        recreated on the next `get`; no eviction timing is guaranteed, as on JVM.
+- [ ] An iOS simulator test confirms that a `reusable` instance is returned again on
+      repeated `get` (cache hit) and is recreated after the cache entry is removed
+      (simulate eviction via the cache's `removeObjectForKey`/`removeAllObjects`;
+      real memory pressure cannot be triggered reliably in a unit test).
 
 ### Step 2.5 — Tests and final verification
 

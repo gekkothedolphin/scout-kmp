@@ -69,7 +69,7 @@ Known JVM dependencies in `core` requiring `expect`/`actual` when porting:
 | File | JVM API | Replacement plan |
 |---|---|---|
 | `utils/ThreadConfinementCheck.kt` | `java.util.concurrent.atomic.AtomicReference`, `ThreadLocal`, `Thread.currentThread().name` | per-platform `expect`/`actual`. atomicfu covers only the atomic; `ThreadLocal` and the thread name need their own actuals (iOS: `NSThread`/`pthread_self()`) |
-| `factory/strategy/ReusableInstanceFactory.kt` | `java.lang.ref.SoftReference` | `expect`/`actual` reference holder. JVM actual = `SoftReference`; iOS behaviour is an open user decision (weak reference clears at next GC, so `reusable` ≈ `factory`), see `.ai/README.md` open questions |
+| `factory/strategy/ReusableInstanceFactory.kt` | `java.lang.ref.SoftReference` | `expect`/`actual` reference holder. JVM actual = `SoftReference`; iOS actual = `platform.Foundation.NSCache` (system-driven eviction, thread-safe), confirmed 2026-10-19 |
 | `factory/strategy/SingleInstanceFactory.kt`, `scope/builder/SynchronizedScopeBuilder.kt`, `scope/container/LateInitScope.kt`, `Inject.kt` | `kotlin.synchronized` (JVM-only), `@Volatile` | common lock (`kotlinx.atomicfu.locks.SynchronizedObject` or internal `expect class`); `kotlin.concurrent.Volatile`. Added 2026-10-19: missed by the Phase 1 inventory |
 | `scope/utils/ParentLookupUtils.kt` | `java.util.Collections.unmodifiableList` | trivially replaceable with standard Kotlin common API |
 
