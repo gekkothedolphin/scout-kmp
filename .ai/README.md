@@ -124,6 +124,11 @@ scout-kmp/      # NEW multiplatform project (own settings.gradle.kts/gradlew), b
 ├── README.md                          # this file — knowledge map
 ├── context_project.md                 # tech stack, architecture, code style
 ├── design_philosophy.md               # origin story & design rationale (Habr article digest)
+├── SESSION_HANDOFF.md                 # pointer to the original Copilot CLI session
+├── benchmarks/
+│   └── baseline/                      # Phase 1 JVM benchmark baseline (unmodified scout/)
+├── experiments/
+│   └── kclass-benchmark/              # standalone KClass-vs-Int key lookup micro-benchmark
 └── migration_plan/
     ├── phase_1_analysis.md            # package/dependency/license analysis
     ├── phase_2_refactoring_shared.md  # move core into shared module (commonMain)
