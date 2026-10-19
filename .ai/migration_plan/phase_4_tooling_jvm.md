@@ -107,6 +107,12 @@ This phase has two distinct halves — do not conflate them:
       `KClass`-based `class-keys` port before deciding `compiled-keys`'s fate for
       `scout-kmp` — this is the data point the Phase 1/2 deferral was explicitly waiting
       for.
+- [ ] Android performance data point: the Phase 1 baseline was measured on HotSpot
+      (Corretto 11, macOS arm64), but Android runs on ART with a different JIT and GC,
+      so the ~9.2x `KClass`-vs-`Int` gap may differ there. If the `compiled-keys`
+      decision is motivated by Android, run at least the `get`/`graph-init` scenarios on
+      a real device (for example with Jetpack Microbenchmark) for both `DiKey` actuals
+      before asking the user to decide.
 - [ ] If option (a) is chosen: `scout-kmp/tools/scout-gradle-plugin`'s bytecode
       rewriting logic is verified to correctly target the `jvm`-compiled classfiles
       produced by the `scout-kmp/core` build (Kotlin/JVM classfile output format must not
@@ -115,6 +121,12 @@ This phase has two distinct halves — do not conflate them:
       `diKeyOf(KClass<T>): DiKey` portal introduced in Phase 2 — this rewrite is
       required regardless of the compiled-keys fate decision, because the signature
       change alone already breaks the plugin's pattern matching.
+- [ ] If option (a) is chosen: build-tool compatibility is verified, not assumed. The
+      original plugin rewrites class files in a `doLast` action on compile tasks. Check
+      it against KMP task names (`compileKotlinJvm`, Android compile tasks), the Gradle
+      configuration cache and build cache, the current Android Gradle Plugin (the legacy
+      Transform API is gone; `AsmClassVisitorFactory` is the supported hook), and the
+      bytecode that Kotlin 2.x emits for inlined `T::class` + `diKeyOf(...)` call sites.
 - [ ] If option (b) is chosen: no `scout-kmp/tools/scout-gradle-plugin` module is
       created at all; document in `scout-kmp`'s own README that `compiled-keys` was
       evaluated and intentionally not ported, with a link to the benchmark comparison
@@ -128,6 +140,10 @@ This phase has two distinct halves — do not conflate them:
 
 ### Part B — New cross-platform KSP validator (new module, additive)
 
+- [ ] The component discovery strategy is the one validated by the Phase 2 Step 2.0
+      spike (`.ai/experiments/ksp-collector-spike/RESULTS.md`). KSP on a test
+      compilation cannot simply enumerate classes from `main` or from other modules, so
+      do not start this part without that result.
 - [ ] A new Gradle module (e.g. `scout-kmp/tools/ksp-component-collector`) is created
       containing
       a KSP `SymbolProcessorProvider` that scans for `Component` subclasses (or a
@@ -157,8 +173,15 @@ This phase has two distinct halves — do not conflate them:
       to use the original `scout/validator` + `classgraph-collector`, (c) it is
       test-scope only and must never appear in a production/main dependency graph.
 
-- [ ] Full root `./gradlew build` (all modules, both `scout` and `tools` composite
-      builds) succeeds.
+- [ ] The `iosApp` sample (Phase 3) has at least one KSP-generated validation test
+      running on an iOS simulator target, exercising the same dependency graph the JVM
+      `validator` checks. This is the end-to-end proof that the iOS validation strategy
+      works, not just on paper. (Moved here from Phase 3, 2026-10-19.)
+
+- [ ] Full `./gradlew build` inside `scout-kmp/` (all modules) succeeds, and `scout/`
+      still builds unmodified. If a Gradle plugin module is created, it is wired as an
+      included build (`pluginManagement { includeBuild(...) }`), because a plugin cannot
+      be applied in the same build that compiles it.
 
 ## ⚠️ Anti-patterns (forbidden on this phase)
 

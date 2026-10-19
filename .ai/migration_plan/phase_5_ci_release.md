@@ -7,9 +7,9 @@ Update the continuous integration pipeline and publishing scripts so the new
 `inspector`, `validator`, etc. as ported through prior phases) build, test, and publish
 correctly across all approved targets, with Maven Central artifacts correctly
 reflecting the new multiplatform structure (e.g. `-jvm`, `-iosarm64` klib variants where
-applicable) under a **new Maven coordinate group** (the original `com.yandex.scout`
-group is never reused/republished under, since `scout/` itself is never touched or
-re-released — see Phase 1's still-open Maven group rename question). CI continues to
+applicable) under a **new Maven coordinate group**, `dev.gekko.scout` (confirmed 2026-08-02, see
+the decisions table in `.ai/README.md`; the original `com.yandex.scout` group is never
+reused, since `scout/` itself is never touched or re-released). CI continues to
 build and test the original `scout/` project unchanged, as its own independent job,
 purely to keep the frozen reference baseline provably buildable.
 
@@ -37,11 +37,19 @@ purely to keep the frozen reference baseline provably buildable.
 
 ## 📋 Checklist (Definition of Done)
 
+- [ ] Maven Central namespace verified. Publishing under `dev.gekko.scout` requires
+      proving ownership of the `gekko.dev` domain (DNS TXT record on the Central
+      Portal). If the domain is not owned, stop and ask the user (the GitHub-based
+      alternative is `io.github.gekkothedolphin`). Ideally this is settled long before
+      this phase, because the group also fixes the Kotlin package name; see the open
+      questions in `.ai/README.md`.
 - [ ] CI workflow(s) under `.github/` build and test all Gradle targets introduced in
       Phase 2/3 for `scout-kmp/` (at minimum `jvm`; plus
       `iosX64`/`iosSimulatorArm64`/`androidTarget` etc. if approved), on appropriate CI
       runners (macOS runner required for iOS targets), as a **new, separate job** from
-      the existing `scout/` CI job (which keeps running unmodified).
+      the existing `scout/` CI job (which keeps running unmodified). A minimal
+      `scout-kmp` job already exists from Phase 2 Step 2.1; this item extends it to
+      every module and target.
 - [ ] A new `scout-kmp/publish.gradle.kts` (or equivalent) correctly produces and signs
       multiplatform publications for `scout-kmp/core` (root publication + per-target
       publications) under the new Maven coordinate group, verified against a local Maven

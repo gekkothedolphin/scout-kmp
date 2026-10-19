@@ -34,7 +34,9 @@ Responsibilities:
 ## 📍 Current status
 
 **Phase: `phase_1_analysis.md` — Analysis is now COMPLETE (all checklist items resolved,
-including the benchmark baseline). Phase 2 (`phase_2_refactoring_shared.md`) is next.
+including the benchmark baseline). Phase 2 (`phase_2_refactoring_shared.md`) is next,
+starting with Step 2.0 (KSP collector feasibility spike); the plan was revised on
+2026-10-19, see "Plan review 2026-10-19" below.
 Key decisions below are CONFIRMED by the user — do not re-litigate them without
 explicit new instruction.**
 
@@ -61,6 +63,48 @@ methods) against the original, unmodified `scout/` codebase. Results archived at
 `README.md` with environment metadata and headline numbers). This is the reference
 point for Phase 4's benchmark comparison and `compiled-keys` fate decision — Phase 1 is
 now fully checked off, Phase 2 can start.
+
+### 🔍 Plan review 2026-10-19
+
+The plan was checked against the actual `scout/` sources. Changes made:
+
+- **Missed JVM API:** `kotlin.synchronized` / `@Volatile` in `SingleInstanceFactory`,
+  `SynchronizedScopeBuilder`, `LateInitScope` and `Inject.kt` were not in the Phase 1
+  inventory. Added to `context_project.md` and Phase 2 Step 2.2.
+- **`ThreadConfinementCheck`:** atomicfu does not cover `ThreadLocal` or thread names;
+  the iOS actual needs its own thread identity (Phase 2 Step 2.4).
+- **`reusable` on iOS:** a weak reference clears at the next GC, so the iOS behaviour
+  became an explicit user decision (open question 3).
+- **Phase 2 split into Steps 2.0–2.5**, each ending with a green build, plus a minimal
+  `scout-kmp` CI job in Step 2.1 instead of waiting for Phase 5.
+- **KSP collector risk moved forward:** KSP on a test compilation cannot simply
+  enumerate classes from `main` or other modules. A throwaway feasibility spike now runs
+  first (Phase 2 Step 2.0); Phase 4 Part B depends on its result.
+- **Ordering fix:** the iOS KSP validation test moved from Phase 3 to Phase 4 Part B
+  (the collector only exists in Phase 4).
+- **Swift interop:** `inline reified` APIs are not exported to Swift, so the iOS
+  consumption model is "graph built in Kotlin, narrow non-generic facade for Swift"
+  (Phase 3).
+- **Android benchmarks:** the `compiled-keys` decision for Android needs at least one
+  ART measurement, not only the HotSpot baseline (Phase 4 Part A).
+- **Gradle plugin compatibility** (KMP task names, configuration cache, current AGP)
+  added as an explicit check for option (a) in Phase 4.
+- **Stale wording fixed:** composite-build wording in Phase 4, "still-open Maven group
+  question" in Phase 5.
+
+### ❓ Open questions (need a user decision)
+
+1. **Maven Central namespace.** `dev.gekko.scout` can only be published if the user
+   owns the `gekko.dev` domain (DNS TXT verification on the Central Portal). If not,
+   the GitHub-based group is `io.github.gekkothedolphin`, and the Kotlin package
+   decision should be revisited together with it **before** Phase 2 Step 2.2 spreads
+   the package name across the code.
+2. **License-header policy for `scout-kmp/`.** `scripts/check-license-headers.sh`
+   requires the Yandex header in every `*.kt` in the repo; brand-new fork files fail
+   it. Decide the header rule for brand-new files (Phase 2 Step 2.1).
+3. **`reusable` on iOS:** weak reference (best-effort, usually recreated), strong cache
+   cleared on memory warning, or strong reference (≈ `singleton`). Needed before
+   Phase 2 Step 2.4.
 
 ## 📜 Interaction rules
 

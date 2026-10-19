@@ -45,16 +45,23 @@ is never edited (see `.ai/README.md` "Physical code location" decision).
       an `iosArm64`/`iosSimulatorArm64`/`iosX64` (or current recommended Kotlin/Native
       iOS target set) framework, and a minimal Swift or Kotlin/Native entry point
       successfully calling into the shared `Scope`.
+- [ ] iOS consumption model documented and followed. Scout's API is `inline reified`
+      (`get<T>()`, `collect<T>()`, `associate<K, V>()` and the builder DSL), and Kotlin
+      does not export inline/reified functions to Objective-C/Swift. So the dependency
+      graph (scopes and components) is built entirely in Kotlin inside the shared
+      module, and Swift sees only a narrow, non-generic facade (for example
+      `AppGraph.coffeeMaker(): CoffeeMaker`). Document this in the module README/KDoc.
+      Do not try to make the generic API callable from Swift: that means changing
+      `scout-kmp/core`'s public API, which this phase forbids.
 - [ ] `scout/samples/coffee-maker` is either re-created as a new sample module under
       `scout-kmp/` (copied+adapted, original left untouched) or explicitly kept as the
       sole JVM-only reference and cross-linked from the new `scout-kmp/` modules'
       README — decide and document which, do not leave both diverging silently, and do
       not edit the original `scout/samples/coffee-maker` either way.
-- [ ] The `iosApp` module has at least one KSP-generated validation test running in
-      `iosTest` (per Phase 4's KSP collector, once available) exercising the same
-      dependency graph the JVM `validator` already checks — this is the concrete proof
-      that the iOS validation strategy decided in Phase 1 actually works end-to-end, not
-      just on paper.
+- ~~KSP-generated validation test in `iosApp`~~ — **moved to Phase 4 Part B**
+      (2026-10-19 plan review): the KSP collector is only built in Phase 4, so this item
+      could never be completed in Phase 3. The feasibility spike for the collector runs
+      even earlier, in Phase 2 Step 2.0.
 - [ ] All new modules are registered in `scout-kmp/settings.gradle.kts` and build
       successfully via a single `./gradlew build` run from inside `scout-kmp/` (or
       platform-appropriate build command for iOS, e.g. `xcodebuild` invoked through the

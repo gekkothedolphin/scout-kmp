@@ -51,6 +51,36 @@ stable and benchmark-compared.
 
 ## 📋 Checklist (Definition of Done)
 
+> Revised 2026-10-19 after a plan review against the actual `scout/` sources (see
+> `.ai/README.md` "Plan review 2026-10-19"). Phase 2 is split into ordered steps. Each
+> step ends with a green build inside `scout-kmp/` and is its own commit; the phase is
+> complete only when every step is ticked. Do not start a step before the previous one
+> is green.
+
+### Step 2.0 — KSP collector feasibility spike (throwaway, before any core porting)
+
+- [ ] In a standalone `.ai/experiments/ksp-collector-spike/` project (same style as
+      `.ai/experiments/kclass-benchmark/`), prove that a KSP processor running on a
+      **test** compilation (`kspJvmTest`, `kspIosSimulatorArm64Test`) can enumerate
+      `Component`-like classes declared in the same module's **main** source set and in
+      a second module. Background: KSP's `Resolver.getAllFiles()` /
+      `getSymbolsWithAnnotation()` only cover the sources of the compilation being
+      processed; classes from `main` and from dependencies are visible by name, not
+      enumerable. Strategies to evaluate: (a) `@KspExperimental`
+      `Resolver.getDeclarationsFromPackage(packageName)` with the packages passed as a
+      KSP option, (b) an explicit list of components written in the test, (c) a marker
+      annotation plus a step on the main compilation (this breaks the confirmed
+      "test compilations only" decision, so only with explicit user sign-off).
+- [ ] Results recorded in the spike's `RESULTS.md` and summarized in `.ai/README.md`.
+      If no strategy works without breaking a confirmed decision, **stop and ask the
+      user** before Step 2.1: the iOS validation strategy in the decisions table would
+      have to change, and that affects Phases 3 and 4.
+
+### Step 2.1 — Bootstrap and guard rails
+
+The bootstrap files exist since commit `bc4016a`, but nobody has run a build yet. Tick
+these only after `./gradlew build` actually passes.
+
 - [ ] **Bootstrap the `scout-kmp/` standalone Gradle project**: create
       `scout-kmp/settings.gradle.kts` (module name `scout-kmp`, `pluginManagement`/
       `dependencyResolutionManagement` repositories: `google()`, `mavenCentral()`,
@@ -67,6 +97,27 @@ stable and benchmark-compared.
       with `jvm()` and the iOS target set (`iosArm64()`, `iosSimulatorArm64()`,
       `iosX64()` or the current recommended Kotlin/Native default target list)
       declared.
+- [ ] A minimal CI job for `scout-kmp/` is added next to the existing `scout/` jobs in
+      `.github/workflows/ci.yaml` (existing jobs untouched): `./gradlew :core:jvmTest` on
+      `ubuntu-latest` and `./gradlew :core:iosSimulatorArm64Test` on a `macos-*` runner.
+      Publishing CI stays in Phase 5; this job exists so a regression is caught from the
+      first ported file instead of three phases later.
+- [ ] License-header policy agreed with the user and applied (open question, see
+      `.ai/README.md`). `scripts/check-license-headers.sh` requires the Yandex header
+      from `scripts/license_header` in the first 15 lines of **every** `*.kt` in the
+      repository, including `scout-kmp/` and `.ai/experiments/`. Brand-new files such as
+      `Placeholder.kt` carry only the fork header and fail the check as soon as CI runs.
+      Copied files keep the Yandex header plus the appended fork line; brand-new files
+      need a rule (fork-only header accepted by the script, or the combined header).
+      The script lives in the repo-root `scripts/`, outside `scout/`, so changing it does
+      not break the "never edit `scout/`" rule.
+
+### Step 2.2 — Port core into `commonMain` (JVM target first)
+
+iOS targets may be temporarily commented out in `scout-kmp/core/build.gradle.kts`
+during this step (with a TODO pointing to Step 2.4) so that missing `actual`s don't
+block the JVM port. They come back in Step 2.4.
+
 - [ ] `scout-kmp/core/src/commonMain` contains (copied and adapted from
       `scout/scout/core/src/main`, package renamed to `dev.gekko.scout.*`): `Component`,
       `Scope`, `Injector`, `Provider`, `Definition`/`Registry`, `InstanceFactory` and its
@@ -75,6 +126,24 @@ stable and benchmark-compared.
       these files import `java.*`/`javax.*` after the copy, and that zero references to
       the bare `package scout` / `import scout.` remain (all renamed to
       `dev.gekko.scout.*`).
+- [ ] Every `T::class.java` call site in the moved code is replaced with `T::class`,
+      verified by grepping for `::class.java` inside `commonMain` (expected: zero
+      matches).
+- [ ] **Synchronization primitives.** `kotlin.synchronized(lock) { }` is JVM-only, and
+      it is used by `factory/strategy/SingleInstanceFactory.kt` (the double-checked init
+      behind every `singleton`), `scope/builder/SynchronizedScopeBuilder.kt`,
+      `scope/container/LateInitScope.kt` and `Inject.kt` (`synchronizedInject*`). This
+      was missing from the Phase 1 JVM-API inventory. Replace it with a common lock:
+      `kotlinx.atomicfu.locks.SynchronizedObject` + `synchronized` (license check
+      required, see anti-patterns) or an internal `expect class` lock. `@Volatile`
+      becomes `kotlin.concurrent.Volatile` (common). JVM behaviour must stay the same:
+      same double-checked locking, and replacing `synchronized(this)` with a dedicated
+      lock object is fine.
+- [ ] `ParentLookupUtils` no longer uses `java.util.Collections.unmodifiableList`;
+      replaced with a common Kotlin API with identical immutability guarantees.
+
+### Step 2.3 — Key abstraction seam
+
 - [ ] **Key abstraction seam** (`expect`/`actual`): introduce `expect class DiKey` in
       `commonMain`, replacing today's `Class<*>`-based `ObjectKey`/`CollectionKey`/
       `AssociationKey` typealiases, plus a single creation portal
@@ -89,9 +158,6 @@ stable and benchmark-compared.
       implement an `Int`-backed JVM actual in this phase — see anti-patterns below, that
       is explicitly Phase 4's decision, made from benchmark data, not built speculatively
       here.
-- [ ] Every `T::class.java` call site in the moved code is replaced with `T::class`,
-      verified by grepping for `::class.java` inside `commonMain` (expected: zero
-      matches).
 - [ ] Read `.ai/design_philosophy.md`'s "`KClass` → `Int` key evolution" section and the
       2026-07-26 empirical benchmark section before finalizing this item. The measured
       data shows: on JVM, `KClass`-keyed `HashMap` lookups are ~9.2x slower than
@@ -101,23 +167,39 @@ stable and benchmark-compared.
       Kotlin/Native, unlike on JVM). Document this trade-off explicitly in the module's
       public docs/KDoc rather than presenting `commonMain` `class-keys` as a drop-in
       performance equivalent on JVM.
-- [ ] `ThreadConfinementCheck` is implemented as an `expect class` in `commonMain` with
-      a `jvmMain actual` (using the strategy recorded in Phase 1 — `kotlinx-atomicfu` or
-      equivalent) and an `iosMain actual` (Kotlin/Native has no `java.util.concurrent`,
-      confirm the atomicfu or `kotlin.native.concurrent` equivalent works correctly
-      under the new Kotlin/Native memory model).
-- [ ] `ReusableInstanceFactory`'s `SoftReference` usage is abstracted behind an
-      `expect`/`actual` type, with the `jvmMain actual` preserving current soft-reference
-      semantics exactly (no behavior change for existing JVM consumers), and the
-      `iosMain actual` implemented using `kotlin.native.ref.WeakReference` (note: this is
-      a *weak*, not *soft*, reference — Kotlin/Native has no soft-reference equivalent;
-      document this semantic difference explicitly rather than presenting it as
-      equivalent behavior).
-- [ ] `ParentLookupUtils` no longer uses `java.util.Collections.unmodifiableList`;
-      replaced with a common Kotlin API with identical immutability guarantees.
-- [ ] Tests are copied and adapted to `commonTest` (or `jvmTest`/`iosTest` where
-      genuinely platform-specific) using `kotlin.test`, and pass on both the `jvm` and
-      iOS (simulator) targets, within `scout-kmp/core`.
+
+### Step 2.4 — Platform `actual`s and iOS targets
+
+- [ ] iOS targets (`iosX64`, `iosArm64`, `iosSimulatorArm64`) are enabled again and
+      `commonMain` compiles for all of them.
+- [ ] `ThreadConfinementCheck` is ported as an `expect`/`actual`. The original uses
+      `ThreadLocal`, `Thread.currentThread().name` and `AtomicReference`. atomicfu only
+      covers `AtomicReference`; it has no `ThreadLocal` and no thread name.
+      `kotlin.native.concurrent.ThreadLocal` is an annotation for top-level/object
+      properties and is not a per-instance drop-in. `jvmMain` keeps
+      `java.lang.ThreadLocal`; `iosMain` needs its own thread identity (for example
+      `NSThread.currentThread` or `pthread_self()` from `platform.posix`). The error
+      message must still name both threads (or thread ids on iOS).
+- [ ] `ReusableInstanceFactory`'s `SoftReference` usage is put behind an
+      `expect`/`actual`, and the `jvmMain actual` keeps soft-reference semantics exactly.
+      The iOS behaviour is a **user decision** made before implementing (open question,
+      see `.ai/README.md`): Kotlin/Native has no soft reference, and a
+      `kotlin.native.ref.WeakReference` is cleared at the next GC, so `reusable` would
+      behave almost like `factory`. Options: (a) weak reference, documented as
+      "best-effort, usually recreated"; (b) strong cache cleared on a memory warning;
+      (c) strong reference, which behaves like `singleton`. Whatever is chosen is
+      documented in KDoc. Also note that the original class is not thread-safe (plain
+      `var`, no lock). Keep that as-is on JVM (no behaviour change) and document it.
+
+### Step 2.5 — Tests and final verification
+
+- [ ] Tests are copied and adapted. The 19 test files use JUnit 5 and AssertJ; AssertJ
+      does not exist in `commonTest`, so assertions are rewritten to `kotlin.test`.
+      Expect this to be the largest single chunk of Phase 2 work. Tests that use
+      `java.util.concurrent` (`ScopeBuilderTest`, `ThreadConfinementCheckTest`,
+      `utils/ThreadExtensions.kt`) go to `jvmTest`, with an iOS counterpart for
+      `ThreadConfinementCheck` where feasible. All tests pass on `jvm` and the iOS
+      simulator target.
 - [ ] `./gradlew build` succeeds for the standalone `scout-kmp/` project (its `core`
       module only, at this point — downstream modules are added in later phases).
       Separately, confirm `scout/` (the original project) still builds unmodified
@@ -157,5 +239,9 @@ stable and benchmark-compared.
   and caused a severe, hard-to-diagnose startup performance regression — see
   `.ai/design_philosophy.md`. Keep the explicit `get`/`opt`/`getLazy`/`getProvider`/
   `collect`/`associate` method family as-is.
-- Do **not** proceed to Phase 3 while `inspector`/`validator` are broken or any test in
-  `core` is failing.
+- Do **not** proceed to Phase 3 while any test in `scout-kmp/core` is failing on any
+  target, or while `scout/` no longer builds unmodified. (`inspector`/`validator` are not
+  touched in this phase; their `scout-kmp/` copies are Phase 4 work.)
+- Do **not** use `kotlin.synchronized`, `java.lang.ThreadLocal` or any other JVM-only
+  API in `commonMain`. They may compile in the JVM-only Step 2.2 and then fail as soon
+  as iOS targets come back in Step 2.4.
