@@ -7,7 +7,7 @@ Update the continuous integration pipeline and publishing scripts so the new
 `inspector`, `validator`, etc. as ported through prior phases) build, test, and publish
 correctly across all approved targets, with Maven Central artifacts correctly
 reflecting the new multiplatform structure (e.g. `-jvm`, `-iosarm64` klib variants where
-applicable) under a **new Maven coordinate group**, `dev.gekko.scout` (confirmed 2026-08-02, see
+applicable) under a **new Maven coordinate group**, `io.github.gekkothedolphin` (confirmed 2026-10-19, see
 the decisions table in `.ai/README.md`; the original `com.yandex.scout` group is never
 reused, since `scout/` itself is never touched or re-released). CI continues to
 build and test the original `scout/` project unchanged, as its own independent job,
@@ -37,12 +37,10 @@ purely to keep the frozen reference baseline provably buildable.
 
 ## 📋 Checklist (Definition of Done)
 
-- [ ] Maven Central namespace verified. Publishing under `dev.gekko.scout` requires
-      proving ownership of the `gekko.dev` domain (DNS TXT record on the Central
-      Portal). If the domain is not owned, stop and ask the user (the GitHub-based
-      alternative is `io.github.gekkothedolphin`). Ideally this is settled long before
-      this phase, because the group also fixes the Kotlin package name; see the open
-      questions in `.ai/README.md`.
+- [ ] Maven Central namespace `io.github.gekkothedolphin` verified on the Central Portal
+      (sign-in with the `gekkothedolphin` GitHub account, or the temporary-repository
+      check the portal offers). Artifact ids use the `scout-` prefix
+      (`scout-core`, ...), since the group no longer contains "scout".
 - [ ] CI workflow(s) under `.github/` build and test all Gradle targets introduced in
       Phase 2/3 for `scout-kmp/` (at minimum `jvm`; plus
       `iosX64`/`iosSimulatorArm64`/`androidTarget` etc. if approved), on appropriate CI

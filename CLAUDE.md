@@ -20,7 +20,7 @@ docs/        User-facing docs for the original library (scope anatomy, validatio
 ```
 
 - Code moves from `scout/` into `scout-kmp/` by **copying and adapting**: never `git mv`, never edit in place, and never add a Gradle dependency between the two projects.
-- Kotlin package `scout.*` becomes `dev.gekko.scout.*`, and the Maven group becomes `dev.gekko.scout`. The rename happens as you copy. `scout/` keeps `com.yandex.scout` and `scout.*`.
+- Kotlin package `scout.*` becomes `dev.gekko.scout.*`, and the Maven group is `io.github.gekkothedolphin` (artifacts `scout-*`; group and package intentionally differ). The rename happens as you copy. `scout/` keeps `com.yandex.scout` and `scout.*`.
 - Targets for this iteration are JVM/Android and iOS (`iosX64`, `iosArm64`, `iosSimulatorArm64`). JS/Wasm is deferred.
 - Modules are added to `scout-kmp/` one phase at a time. Right now only `:core` exists, and it holds a bootstrap placeholder. Phase 2 (porting `scout/scout/core` into `commonMain`) is next. It is split into Steps 2.0–2.5 and starts with a KSP feasibility spike. Check the "Open questions" section of `.ai/README.md` before a step that depends on one.
 - Keep the original `Copyright 2023 Yandex LLC` headers. Only append `Copyright 2026 gekkothedolphin@gmail.com`.

@@ -44,8 +44,9 @@ recorded in this file's checklist and, if needed, follow-up notes appended to
       similar) is required for the fork, or whether the existing `scout.*` package is
       kept. **Status: done** — rename `scout.*` → `dev.gekko.scout.*` confirmed, to be
       executed as part of the copy into `scout-kmp/core` in Phase 2. Maven group for the
-      new `scout-kmp/` project: **`dev.gekko.scout`** (matches the Kotlin package
-      exactly, confirmed 2026-08-02). The original `scout/build.gradle`'s
+      new `scout-kmp/` project: ~~`dev.gekko.scout`~~ (2026-08-02), changed on 2026-10-19
+      to **`io.github.gekkothedolphin`** (Maven Central namespace verification); the
+      Kotlin package stays `dev.gekko.scout`. The original `scout/build.gradle`'s
       `com.yandex.scout` group is never changed — `scout/` is frozen.
 - [x] Verify license compatibility: original license is Apache 2.0 (`LICENSE` file),
       confirm the fork's added copyright line format matches what is already present in

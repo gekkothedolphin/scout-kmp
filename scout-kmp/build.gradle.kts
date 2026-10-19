@@ -12,6 +12,6 @@ plugins {
 }
 
 allprojects {
-    group = "dev.gekko.scout"
+    group = "io.github.gekkothedolphin"
     version = "0.1.0-SNAPSHOT"
 }
