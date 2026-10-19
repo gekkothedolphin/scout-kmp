@@ -3,3 +3,12 @@
 
 ### Mac OS ###
 .DS_Store
+
+### Gradle / Kotlin ###
+.gradle/
+.kotlin/
+local.properties
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
